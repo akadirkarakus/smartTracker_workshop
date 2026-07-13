@@ -79,3 +79,13 @@
 ## 10. iOS Core Bluetooth Kısıtlamaları
 
 **Risk:** iOS, background modda Core Bluetooth bağlantılarını kısıtlar. SPP (Classic Bluetooth) iOS'ta `ExternalAccessory` framework'ü gerektirir ve MFi sertifikası olmayan adaptörler bu framework'e erişemez. Bu nedenle iOS'ta K-LINE bağlantısı yalnızca BLE üzerinden mümkün olabilir; bu da adaptörün BLE+SPP bridge desteği gerektireceği anlamına gelir.
+
+---
+
+## 11. ⚠️ SecurityAccess Tek-Transaction Sadeleştirmesi — Donanım Testi Gerekli
+
+**Risk:** `KLineService.requestSeed()`/`sendKey()`, önceden (H14 düzeltmesi öncesi) her biri kendi bağımsız transaction'ında çalışıyordu — `sendKey()` kendi içinde YENİ bir RequestSeed daha gönderiyordu. Bu, operatöre gösterilen seed ile `SendKey` anında ECU'nun beklediği seed'in farklı olabileceği bir riski taşıyordu (tachograf her RequestSeed'de farklı/rastgele seed üretiyorsa). Düzeltme, `requestSeed()`'i transaction'ı kapatmadan bırakıp, operatör PIN'i hesaplarken bir `TesterPresent` keep-alive (`securityAccessKeepAliveInterval`, 2 s) ile oturumu canlı tutuyor; `sendKey()` bu AYNI oturum üzerinden PIN'i gönderiyor.
+
+**Doğrulanmamış varsayım:** Tachografın, RequestSeed sonrası uzatılmış (potansiyel olarak dakikalarca sürebilen) bir bekleme penceresinde hâlâ o seed'i geçerli kabul ettiği — bazı ECU implementasyonları SecurityAccess için S3 oturum zaman aşımından bağımsız, çok daha kısa bir "seed-to-key" penceresi uygulayabilir.
+
+**Test:** Gerçek tachograf donanımıyla uçtan uca dene: seed göster → operatör servis kartından PIN hesaplasın (gerçekçi bir gecikmeyle, örn. 30-60 s) → PIN gir → doğrula. Ayrıca yanlış PIN girip (kilitlenmeden) tekrar deneme akışını test et (aynı seed'in tekrar kabul edilip edilmediği). Başarısız olursa geri dönüş planı: seed'i göstermeden önce operatörden PIN'i harici olarak önceden hazırlamasını isteyen bir UX'e geçmek (RequestSeed ve SendKey'i minimum gecikmeyle art arda göndermek).

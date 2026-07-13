@@ -14,5 +14,5 @@ abstract class BleConnectionRepository {
   Future<void> writeCharacteristic(String charUuid, List<int> data);
   Future<void> setNotify(String charUuid, {required bool enable});
   Stream<List<int>> notifyStream(String charUuid);
-  void dispose();
+  Future<void> dispose();
 }

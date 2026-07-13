@@ -169,48 +169,114 @@ class KLineService {
     _notifySub = _transport
         .notifyStream('SPP_DATA')
         .listen(_buffer.add);
+    _connStateSub = _transport.connectionState.listen((state) {
+      if (state == BleConnectionState.disconnected) _connectionLost = true;
+    });
   }
 
   final BleConnectionRepository _transport;
   final KLineFrameBuffer _buffer = KLineFrameBuffer();
   StreamSubscription<List<int>>? _notifySub;
+  StreamSubscription<BleConnectionState>? _connStateSub;
+  bool _connectionLost = false;
 
   // ── Flow 1 — Security Access (PIN) ────────────────────────────────────────
+  //
+  // ⚠️ DONANIM DOĞRULAMASI GEREKLİ: requestSeed() ile sendKey() arasında
+  // K-Line oturumu artık AÇIK tutuluyor (StopCommunication gönderilmiyor) ve
+  // operatör PIN'i hesaplarken bir TesterPresent keep-alive ile canlı
+  // tutuluyor — bu, CalibrationMessages.md Flow 1'in tek-transaction
+  // (Wakeup→StartComm→StartSession→RequestSeed→SendKey→StopComm) sırasına
+  // uyum sağlamak için yapıldı (önceki davranış: sendKey() kendi başına YENİ
+  // bir transaction'da seed'i tekrar istiyordu, bu da tachograf her
+  // RequestSeed'de farklı seed üretiyorsa operatöre gösterilen seed ile
+  // SendKey anında geçerli olan seed'in uyuşmamasına yol açabilirdi).
+  // Tachografın uzatılmış bekleme penceresinde seed'i hâlâ geçerli kabul
+  // edip etmediği gerçek donanımda TEST EDİLMEDEN bu akış production'da
+  // güvenilir sayılmamalı.
+  bool _securityAccessPending = false;
+  Timer? _securityAccessKeepAlive;
 
-  // Seed'i takograftan ister; hex string olarak döner (örn. "A3F7")
+  // Seed'i takograftan ister; hex string olarak döner (örn. "A3F7").
+  // Transaction'ı KAPATMAZ — sendKey() veya cancelSecurityAccess() ile
+  // kapatılana kadar açık (keep-alive ile canlı tutulan) kalır.
   Future<String> requestSeed() async {
-    await _beginTransaction();
-    await _startSession(KLineSession.standard);
-    final resp = await _transact(KLineFrame.securityAccessRequestSeed());
-    await _endTransaction();
-
-    if (resp.isNegative) {
-      throw KLineException('RequestSeed başarısız', nrc: resp.nrc);
-    }
-    // Yanıt: 67 7D <seed bytes...> — data = seed bytes
-    return KLineCodec.decodeSeedHex(resp.data);
-  }
-
-  // Operatörün girdiği PIN'i takografa gönderir
-  Future<SecurityAccessResult> sendKey(String pin) async {
-    final pinBytes = KLineCodec.encodePinAscii(pin);
     await _beginTransaction();
     try {
       await _startSession(KLineSession.standard);
-      await _requestSeedInternal(); // seed istenmeden sendKey gönderilmez
+      final resp = await _transact(KLineFrame.securityAccessRequestSeed());
+      if (resp.isNegative) {
+        throw KLineException('RequestSeed başarısız', nrc: resp.nrc);
+      }
+      _securityAccessPending = true;
+      _startSecurityAccessKeepAlive();
+      // Yanıt: 67 7D <seed bytes...> — data = seed bytes
+      return KLineCodec.decodeSeedHex(resp.data);
+    } catch (_) {
+      await _endTransaction();
+      rethrow;
+    }
+  }
+
+  // Operatörün girdiği PIN'i, requestSeed() ile açılan AYNI oturum üzerinden
+  // gönderir (yeni bir RequestSeed açmadan). Yanlış PIN (ama kilitlenme
+  // olmadan) oturumu AÇIK bırakır — PinEntryScreen'in 3 deneme hakkı aynı
+  // seed üzerinden tekrar denenebilsin diye. Başarı, ECU kilidi (NRC 0x36)
+  // veya beklenmeyen bir hata durumunda oturum kapatılır.
+  Future<SecurityAccessResult> sendKey(String pin) async {
+    if (!_securityAccessPending) {
+      throw const KLineException(
+        'sendKey() çağrılmadan önce requestSeed() ile bir oturum açılmalı',
+      );
+    }
+    _stopSecurityAccessKeepAlive();
+    final pinBytes = KLineCodec.encodePinAscii(pin);
+    try {
       final resp = await _transact(
         KLineFrame.securityAccessSendKey(pinBytes),
         timeout: KLineTiming.pinResponseTimeout,
         retryOnNrc78: true,
       );
       if (resp.isNegative) {
-        // NRC 0x36: 3 yanlış denemeden sonra session kilitlenir; StopComm gönder.
+        if (resp.nrc == KLineNrc.exceededNumberOfAttempts) {
+          _securityAccessPending = false;
+          await _endTransaction();
+        } else {
+          // Yanlış PIN ama kilitlenmedi — aynı oturumda tekrar denemeye izin ver.
+          _startSecurityAccessKeepAlive();
+        }
         return SecurityAccessResult(success: false, nrc: resp.nrc);
       }
-      return const SecurityAccessResult(success: true);
-    } finally {
+      _securityAccessPending = false;
       await _endTransaction();
+      return const SecurityAccessResult(success: true);
+    } catch (_) {
+      _securityAccessPending = false;
+      await _endTransaction();
+      rethrow;
     }
+  }
+
+  // Operatör PIN girmeden vazgeçerse (PIN ekranından geri dönerse) açık
+  // kalan Security Access oturumunu temiz şekilde kapatır.
+  Future<void> cancelSecurityAccess() async {
+    if (!_securityAccessPending) return;
+    _stopSecurityAccessKeepAlive();
+    _securityAccessPending = false;
+    await _endTransaction();
+  }
+
+  void _startSecurityAccessKeepAlive() {
+    _securityAccessKeepAlive?.cancel();
+    _securityAccessKeepAlive = Timer.periodic(
+      KLineTiming.securityAccessKeepAliveInterval,
+      (_) => _sendNoReply(KLineFrame.testerPresentNoResponse()),
+    );
+  }
+
+  void _stopSecurityAccessKeepAlive() {
+    _securityAccessKeepAlive?.cancel();
+    _securityAccessKeepAlive = null;
   }
 
   // ── Flow 2 — CAL1: Tüm kalibrasyon verilerini oku ─────────────────────────
@@ -696,7 +762,15 @@ class KLineService {
   // ── Dispose ───────────────────────────────────────────────────────────────
 
   Future<void> dispose() async {
+    if (_securityAccessPending) {
+      try {
+        await cancelSecurityAccess();
+      } catch (_) {
+        // Dispose sırasında bağlantı zaten kopmuş olabilir — yutup devam et.
+      }
+    }
     await _notifySub?.cancel();
+    await _connStateSub?.cancel();
   }
 
   // ── İç yardımcılar ────────────────────────────────────────────────────────
@@ -758,18 +832,15 @@ class KLineService {
     }
   }
 
-  // SecurityAccess RequestSeed (flow içi kullanım)
-  Future<void> _requestSeedInternal() async {
-    await _transact(KLineFrame.securityAccessRequestSeed());
-    await Future<void>.delayed(KLineTiming.interMessageDelay);
-  }
-
   // Frame gönder, yanıtı bekle
   Future<KLineResponse> _transact(
     List<int> frame, {
     Duration? timeout,
     bool retryOnNrc78 = false,
   }) async {
+    // Önceki isteğin çözülemeyen/artık baytlarının bu yeni isteğin yanıtını
+    // kirletmesini önle — her request-response çifti temiz bir tamponla başlar.
+    _buffer.clear();
     await _transport.writeCharacteristic('SPP_DATA', frame);
     return _waitResponse(
       timeout: timeout ?? KLineTiming.defaultTimeout,
@@ -787,24 +858,36 @@ class KLineService {
     required Duration timeout,
     bool retryOnNrc78 = false,
   }) async {
-    final deadline = DateTime.now().add(timeout);
+    final baseDeadline = DateTime.now().add(timeout);
+    // İlk NRC 0x78 alındığında set edilir; sonraki bekleme bu deadline'a
+    // tabi olur (nrc78MaxWait'e kadar), tekrar tekrar uzatılmaz.
+    DateTime? nrc78Deadline;
 
-    while (DateTime.now().isBefore(deadline)) {
+    while (true) {
+      if (_connectionLost) {
+        throw const KLineException('Bağlantı koptu');
+      }
       final resp = _buffer.tryParse();
       if (resp != null) {
         // NRC 0x78: tachograph hâlâ işliyor — yeniden dene
         if (retryOnNrc78 &&
             resp.isNegative &&
             resp.nrc == KLineNrc.requestCorrectlyReceivedResponsePending) {
+          nrc78Deadline ??= DateTime.now().add(KLineTiming.nrc78MaxWait);
+          if (DateTime.now().isAfter(nrc78Deadline)) {
+            throw const KLineException('NRC 0x78 azami bekleme süresi aşıldı');
+          }
           await Future<void>.delayed(const Duration(milliseconds: 200));
           continue;
         }
         return resp;
       }
+      final effectiveDeadline = nrc78Deadline ?? baseDeadline;
+      if (DateTime.now().isAfter(effectiveDeadline)) {
+        throw const KLineException('Yanıt zaman aşımına uğradı');
+      }
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
-
-    throw const KLineException('Yanıt zaman aşımına uğradı');
   }
 
   static bool _bytesEqual(List<int> a, List<int> b) {

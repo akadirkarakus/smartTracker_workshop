@@ -131,9 +131,12 @@ class ClassicBluetoothConnectionService implements repo.BleConnectionRepository 
   Future<List<int>> readCharacteristic(String charUuid) async {
     _ensureConnected();
     try {
-      final bytes = await _notifyController.stream.first;
+      final bytes = await _notifyController.stream.first
+          .timeout(const Duration(seconds: 5));
       _log('← Read [SPP]: ${bytesToHex(bytes)}', LogLevel.incoming);
       return bytes;
+    } on TimeoutException {
+      throw const BleCharacteristicException(message: 'SPP read timed out.');
     } catch (e) {
       throw BleCharacteristicException(
           message: 'SPP read failed.', cause: e);
@@ -169,13 +172,11 @@ class ClassicBluetoothConnectionService implements repo.BleConnectionRepository 
   // ─── Dispose ──────────────────────────────────────────────────────────────
 
   @override
-  void dispose() {
-    _inputSub?.cancel();
-    _connStateSub?.cancel();
-    _connection?.dispose();
-    _stateController.close();
-    _logController.close();
-    _notifyController.close();
+  Future<void> dispose() async {
+    await disconnect();
+    await _stateController.close();
+    await _logController.close();
+    await _notifyController.close();
   }
 
   // ─── Yardımcılar ──────────────────────────────────────────────────────────

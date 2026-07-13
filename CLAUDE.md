@@ -25,6 +25,8 @@ Two roles are selected at launch:
 - **Şoför (Driver)** → `MonitorScreen` — real-time dashboard fed by `TachographSimulator`
 - **Servis (Service technician)** → `CalibrationScreen` — multi-tab calibration tool with PIN auth
 
+> **Scope decision:** Active development going forward is scoped to the **Servis** side only (`CalibrationScreen` and everything under it — K-Line/Bluetooth, calibration tabs, diagnostics, reports, settings). The **Şoför** side (`MonitorScreen`, `TachographSimulator`) is frozen — do not propose or implement changes there unless the user explicitly asks for driver-side work.
+
 ### Layer structure
 
 ```
@@ -79,8 +81,9 @@ The frame format is KWP2000 / ISO 14230 (`[FMT][TADDR=0xEE][SADDR=0xF0][LEN][SID
 - **No state management library** — screens use `setState` + `StreamSubscription` directly.
 - **Bluetooth transport** is selected at compile time via `--dart-define=BT_TRANSPORT=classic|ble`. At runtime users can override via the transport selector in `BleScanScreen`. A simulated transport (`BtTransport.simulated`) is available for testing without hardware.
 - **iOS platform constraint** — Classic Bluetooth SPP requires the `ExternalAccessory` framework and MFi certification. On iOS, K-LINE communication is only possible over BLE (the adapter must bridge BLE↔K-LINE). This is not a code limitation — it is an iOS/hardware requirement.
-- **TachographSimulator** enforces EU regulation AB 561/2006 limits: max 4 h 30 min continuous driving, 90 km/h speed limit for violation counting.
+- **TachographSimulator** partially models EU regulation AB 561/2006: it counts continuous driving toward a 4 h 30 min limit and resets that counter only after an uninterrupted break of at least 45 minutes (Md.7 — a shorter or interrupted break does not reset it), and it counts a violation for every second spent above the 90 km/h speed limit while driving. It does **not** enforce the limit (driving is never blocked), and it does not yet model daily/weekly driving caps, daily/weekly rest requirements, or the 15+30 split-break pattern — these remain future scope.
 - **CalibrationScreen** uses `IndexedStack` (not `Navigator`) for its 5 tabs, with a custom back-navigation that returns to the previous tab index rather than popping the route.
 - **Two colour palettes**: `MonitorScreen` uses inline `const Color(...)` constants defined at file scope; `CalibrationScreen` uses the `CalColors` class from `calibration_data.dart`.
 - **PIN authentication** gates calibration writes inside `CalibrationScreen` via `_isPinAuthenticated`.
+- **⚠️ Security Access (PIN) session — needs hardware validation.** `KLineService.requestSeed()`/`sendKey()` keep a single K-Line transaction open across the seed-display → operator-PIN-entry gap (via a `TesterPresent` keep-alive, `securityAccessKeepAliveInterval`), so the seed shown to the operator matches the one active when `sendKey()` fires — previously `sendKey()` silently opened a second transaction and requested a fresh seed, which could mismatch if the tachograph issues a new seed per request. `sendKey()` keeps the session open on an ordinary wrong-PIN response (NRC ≠ `exceededNumberOfAttempts`) so `PinEntryScreen`'s 3-attempt retry can reuse the same seed; it closes the transaction on success, on `exceededNumberOfAttempts`, or on any unexpected error. **This has not been exercised against real tachograph hardware — verify the full PIN flow (seed display → operator calculates PIN → entry → verify, including a wrong-PIN retry) on physical hardware before relying on it in the field.**
 - **AppLogger** is a global singleton; it only records entries when `testModeEnabled` is `true`, so it has zero overhead in normal use. `TestLogScreen` subscribes to `AppLogger.instance.stream` to display live entries.

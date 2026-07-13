@@ -146,6 +146,11 @@ class KLineSid {
   static const int wdbi          = 0x2E; // WriteDataByIdentifier
   static const int iocp          = 0x2F; // IOControlByIdentifier
   static const int negativeResp  = 0x7F;
+
+  // Pozitif yanıt SID'leri (istek SID + 0x40)
+  static const int rdbiResponse          = 0x62; // ReadDataByIdentifier yanıtı
+  static const int wdbiResponse          = 0x6E; // WriteDataByIdentifier yanıtı
+  static const int routineCtrlResponse   = 0x71; // RoutineControl yanıtı
 }
 
 // ── Rutin test IDleri ──────────────────────────────────────────────────────
@@ -211,6 +216,11 @@ class KLineTiming {
   static const Duration msPairingPollInterval = Duration(milliseconds: 250);
   static const Duration defaultTimeout        = Duration(seconds: 5);
   static const Duration nrc78MaxWait          = Duration(seconds: 10);
+
+  // Operatör PIN'i hesaplarken (belirsiz süre) K-Line oturumunu canlı
+  // tutmak için gönderilen TesterPresent aralığı — S3 session-timeout
+  // penceresinin (tipik ~5s) güvenli şekilde altında.
+  static const Duration securityAccessKeepAliveInterval = Duration(seconds: 2);
 
   // DateTime değişimi bu eşiği aşarsa W-Constant da yeniden yazılmalı (protokol gereği)
   static const int dateTimeWConstantThresholdMinutes = 20;

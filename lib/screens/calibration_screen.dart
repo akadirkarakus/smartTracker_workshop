@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -33,6 +34,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   BleDeviceResult? _connectedDevice;
   BleConnectionRepository? _btRepo;
   KLineService? _klineService;
+  StreamSubscription<BleConnectionState>? _connStateSub;
+  bool _manualDisconnectInProgress = false;
 
   late final List<CalParam> _params;
   late final List<DtcCode> _dtcCodes;
@@ -74,8 +77,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   @override
   void dispose() {
     AppLogger.instance.cancelBridges();
+    _connStateSub?.cancel();
     _klineService?.dispose();
-    _btRepo?.dispose();
+    unawaited(_btRepo?.dispose());
     super.dispose();
   }
 
@@ -306,6 +310,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             );
             AppLogger.instance.cancelBridges();
             AppLogger.instance.bridgeStream(repo.logs);
+            _connStateSub?.cancel();
+            _connStateSub = repo.connectionState.listen(_onConnectionStateChanged);
             _loadDeviceData(service);
           },
         ),
@@ -388,9 +394,29 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _deviceSerial = snap.serialNumber ?? _deviceSerial;
   }
 
-  void _disconnectDevice() {
+  void _onConnectionStateChanged(BleConnectionState state) {
+    if (state != BleConnectionState.disconnected) return;
+    if (_manualDisconnectInProgress) return;
+    if (_btRepo == null || !mounted) return;
+
+    AppLogger.instance.log(
+      'Unexpected disconnect detected',
+      level: LogLevel.error,
+      category: LogCategory.bluetooth,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Bağlantı koptu.')),
+    );
+    _disconnectDevice();
+  }
+
+  Future<void> _disconnectDevice() async {
+    _manualDisconnectInProgress = true;
+    _connStateSub?.cancel();
+    _connStateSub = null;
     _klineService?.dispose();
-    _btRepo?.dispose();
+    await _btRepo?.dispose();
+    if (!mounted) return;
     setState(() {
       _connectedDevice = null;
       _btRepo = null;
@@ -400,6 +426,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       _deviceHwVersion = null;
       _deviceSwVersion = null;
       _deviceSerial = null;
+      _manualDisconnectInProgress = false;
       for (final p in _params) {
         p.value = null;
       }

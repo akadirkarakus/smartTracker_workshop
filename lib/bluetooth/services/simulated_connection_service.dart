@@ -83,10 +83,11 @@ class SimulatedConnectionService implements BleConnectionRepository {
   }
 
   @override
-  void dispose() {
-    _stateCtrl.close();
-    _logCtrl.close();
-    _sppDataCtrl.close();
+  Future<void> dispose() async {
+    await disconnect();
+    await _stateCtrl.close();
+    await _logCtrl.close();
+    await _sppDataCtrl.close();
   }
 
   // ── K-LINE frame parser & response builder ───────────────────────────────

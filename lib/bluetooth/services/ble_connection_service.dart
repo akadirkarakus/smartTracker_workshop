@@ -228,16 +228,17 @@ class FlutterBluePlusConnectionService implements BleConnectionRepository {
   }
 
   @override
-  void dispose() {
-    _connStateSub?.cancel();
+  Future<void> dispose() async {
+    await disconnect();
+    await _connStateSub?.cancel();
     for (final sub in _notifySubs.values) {
-      sub.cancel();
+      await sub.cancel();
     }
     for (final ctrl in _notifyControllers.values) {
-      ctrl.close();
+      await ctrl.close();
     }
-    _stateController.close();
-    _logController.close();
+    await _stateController.close();
+    await _logController.close();
   }
 
   // ─── Yardımcılar ─────────────────────────────────────────────────────────

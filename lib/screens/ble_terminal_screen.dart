@@ -71,7 +71,7 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
     _logSub?.cancel();
     _scrollController.dispose();
     _inputController.dispose();
-    if (!_repositoryAdopted) widget.repository.dispose();
+    if (!_repositoryAdopted) unawaited(widget.repository.dispose());
     super.dispose();
   }
 

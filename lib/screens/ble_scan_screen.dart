@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
@@ -81,6 +82,7 @@ class _BleScanScreenState extends State<BleScanScreen> {
   }
 
   void _selectTransport(BtTransport t) {
+    if (t == BtTransport.classic && Platform.isIOS) return;
     if (t == BtTransport.simulated) {
       _startSimulation();
       return;
@@ -328,8 +330,11 @@ class _TransportSelector extends StatelessWidget {
                   child: _TransportCard(
                     icon: Icons.bluetooth,
                     title: 'Classic\nBluetooth',
-                    subtitle: 'SPP / Seri Port\nAndroid için',
+                    subtitle: Platform.isIOS
+                        ? 'SPP / Seri Port\niOS\'ta desteklenmiyor'
+                        : 'SPP / Seri Port\nsadece Android',
                     onTap: () => onSelect(BtTransport.classic),
+                    enabled: !Platform.isIOS,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -367,62 +372,67 @@ class _TransportCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.accentColor,
+    this.enabled = true,
   });
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
   final Color? accentColor;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFC4DDE6), width: 1.5),
-          boxShadow: const [
-            BoxShadow(color: Color(0x0A000000), blurRadius: 6, offset: Offset(0, 3)),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: accentColor ?? const Color(0xFF1A5F7A),
-                borderRadius: BorderRadius.circular(14),
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.45,
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFC4DDE6), width: 1.5),
+            boxShadow: const [
+              BoxShadow(color: Color(0x0A000000), blurRadius: 6, offset: Offset(0, 3)),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: accentColor ?? const Color(0xFF1A5F7A),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: Colors.white, size: 28),
               ),
-              child: Icon(icon, color: Colors.white, size: 28),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0D3347),
-                height: 1.3,
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0D3347),
+                  height: 1.3,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFF4A7A8A),
-                height: 1.4,
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF4A7A8A),
+                  height: 1.4,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

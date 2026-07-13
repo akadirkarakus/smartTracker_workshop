@@ -1,3 +1,4 @@
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../../bluetooth/models/ble_device_result.dart';
@@ -67,6 +68,15 @@ class DashboardTab extends StatelessWidget {
             } catch (_) {
               return false;
             }
+          },
+          onCancel: () {
+            unawaited(() async {
+              try {
+                await klineService!.cancelSecurityAccess();
+              } catch (_) {
+                // Bağlantı zaten kopmuş olabilir — sessizce yut.
+              }
+            }());
           },
         ),
       ),

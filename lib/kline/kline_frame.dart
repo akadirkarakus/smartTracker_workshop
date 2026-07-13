@@ -146,9 +146,24 @@ class KLineResponse {
 
 // ── Frame buffer — SPP'den gelen chunked baytları birleştirip frame ayrıştırır
 class KLineFrameBuffer {
+  // Protokolün tek baytlık LEN alanının teorik maksimumunun (255) güvenli
+  // bir üst payı — bozuk/gürültülü veri altında sınırsız büyümeyi engeller.
+  static const int _maxBufferSize = 512;
+
   final List<int> _buf = [];
 
-  void add(List<int> bytes) => _buf.addAll(bytes);
+  void add(List<int> bytes) {
+    _buf.addAll(bytes);
+    if (_buf.length > _maxBufferSize) {
+      final overflow = _buf.length - _maxBufferSize;
+      _buf.removeRange(0, overflow);
+      AppLogger.instance.log(
+        'Frame buffer overflow ($overflow byte atıldı, boyut: ${_buf.length})',
+        level: LogLevel.error,
+        category: LogCategory.bluetooth,
+      );
+    }
+  }
 
   void clear() => _buf.clear();
 
@@ -251,8 +266,8 @@ class KLineFrameBuffer {
     }
 
     // RDBI / WDBI yanıtı — RID bytes çıkar
-    // RDBI pozitif: 0x62; WDBI pozitif: 0x6E
-    if ((sid == 0x62 || sid == 0x6E) && payload.length >= 3) {
+    if ((sid == KLineSid.rdbiResponse || sid == KLineSid.wdbiResponse) &&
+        payload.length >= 3) {
       return KLineResponse(
         sid: sid,
         ridHigh: payload[1],
@@ -261,8 +276,8 @@ class KLineFrameBuffer {
       );
     }
 
-    // RoutineControl pozitif: 0x71 — RID bytes çıkar
-    if (sid == 0x71 && payload.length >= 4) {
+    // RoutineControl pozitif — RID bytes çıkar
+    if (sid == KLineSid.routineCtrlResponse && payload.length >= 4) {
       return KLineResponse(
         sid: sid,
         ridHigh: payload[2],

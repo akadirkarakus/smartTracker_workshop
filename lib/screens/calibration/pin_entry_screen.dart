@@ -7,12 +7,14 @@ class PinEntryScreen extends StatefulWidget {
   final void Function(bool success) onResult;
   final Future<String?> Function() onRequestSeed;
   final Future<bool> Function(String pin) onSendKey;
+  final VoidCallback onCancel;
 
   const PinEntryScreen({
     super.key,
     required this.onResult,
     required this.onRequestSeed,
     required this.onSendKey,
+    required this.onCancel,
   });
 
   @override
@@ -62,6 +64,11 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
   void _backspace() {
     if (_pin.isEmpty) return;
     setState(() => _pin = _pin.substring(0, _pin.length - 1));
+  }
+
+  void _cancelAndPop() {
+    widget.onCancel();
+    Navigator.pop(context);
   }
 
   Future<void> _verify() async {
@@ -125,7 +132,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: CalColors.primary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: _cancelAndPop,
         ),
         title: const Text('PIN Doğrulama', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Container(height: 1, color: CalColors.outlineVariant)),
@@ -258,7 +265,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                             const Text('Hesap kilitlendi', style: TextStyle(color: CalColors.error, fontWeight: FontWeight.w700, fontSize: 16)),
                             const SizedBox(height: 8),
                             TextButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: _cancelAndPop,
                               child: const Text('Geri Dön', style: TextStyle(color: CalColors.primary)),
                             ),
                           ],
