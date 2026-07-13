@@ -418,8 +418,11 @@ class KLineCodec {
     return DateTime(year, month, day);
   }
 
-  static bool _validDate(int year, int month, int day) =>
-      month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 2000;
+  static bool _validDate(int year, int month, int day) {
+    if (year < 2000 || month < 1 || month > 12 || day < 1) return false;
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    return day <= daysInMonth;
+  }
 
   static int _bcd(int v) => ((v ~/ 10) << 4) | (v % 10);
   static int _fromBcd(int bcd) => ((bcd >> 4) * 10) + (bcd & 0x0F);

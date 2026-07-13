@@ -5,6 +5,8 @@ import '../models/tachograph_data.dart';
 // AB 561/2006 limitleri
 const Duration _maxContinuousDriving = Duration(hours: 4, minutes: 30);
 const double _speedLimit = 90.0;
+// Md.7: sürekli sürüş sayacını sıfırlamak için gereken minimum kesintisiz mola.
+const Duration _minBreakDuration = Duration(minutes: 45);
 
 class TachographSimulator {
   final _controller = StreamController<TachographData>.broadcast();
@@ -72,10 +74,12 @@ class TachographSimulator {
       if (newSpeed > _speedLimit) {
         violations++;
       }
+      // Sürüşe dönüldüğünde mola serisi bozulur; bir sonraki mola sıfırdan sayılmalı.
+      lastBreak = Duration.zero;
     } else if (isResting) {
       lastBreak += const Duration(seconds: 1);
       dailyRest += const Duration(seconds: 1);
-      if (contDriving > Duration.zero) {
+      if (contDriving > Duration.zero && lastBreak >= _minBreakDuration) {
         contDriving = Duration.zero;
       }
     }
