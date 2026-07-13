@@ -1,3 +1,3 @@
 # takograpp_d1
 
-A new Flutter project.
+A mobile app for tachograph calibration. 
