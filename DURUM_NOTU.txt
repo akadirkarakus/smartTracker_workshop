@@ -1,0 +1,123 @@
+TAKOGRAPP_D1 — PROJE DURUM NOTU
+(Bu not, bir haftalık aradan sonra kaldığımız yeri hatırlamanız için hazırlandı.)
+Son güncelleme: 2026-07-03
+
+============================================================
+1) PROGRAMDA ŞU AN VAR OLAN VE ÇALIŞAN ÖZELLİKLER
+============================================================
+
+Genel yapı:
+- Uygulama açılışta rol seçtiriyor: Şoför -> MonitorScreen (simülasyon ile canlı gösterge),
+  Servis -> CalibrationScreen (PIN'li, 4 sekmeli kalibrasyon aracı).
+- K-LINE (KWP2000/ISO14230) protokolü lib/kline/ klasöründe tam olarak modellenmiş:
+  KLineService (flow'lar), KLineCodec (encode/decode), KLineFrame, KLineRecords (sabitler).
+- Bluetooth Classic (SPP) ve BLE, aynı KLineService arayüzü üzerinden çalışıyor;
+  simüle bağlantı (SimulatedConnection) donanımsız test için mevcut.
+
+"Kalibrasyon" sekmesi (CalibrationParamsTab / EditParameterScreen):
+- Toplam 27 parametre listeleniyor (Araç, Lastik, Zaman, Sistem bölümleri).
+- BU OTURUMDA YAPILAN DÜZELTMEYLE BİRLİKTE, listedeki TÜM parametreler artık
+  "Onayla & Yaz" (tekli) veya "Tüm Değişiklikleri Kaydet" (topluca) butonuna
+  basıldığında gerçekten K-LINE üzerinden takografa gönderiliyor:
+    vrn, vin, member_state, reg_date, tyre_size, tyre_circ, k_constant, w_constant,
+    pproos, teeth_count, speed_limit, odometer, next_cal_date, ecu_install_date,
+    trip_distance, heartbeat, tco1_priority, tco1_rate, utc_offset, datetime,
+    prewarning_card1, prewarning_tacho, prewarning_cal,
+    download_period_vu, download_period_card.
+- Motion sensör eşleştirme ekranı (motion_sensor_pairing_screen.dart) K-LINE'a
+  doğru şekilde bağlı ve çalışıyor.
+- DTC okuma/temizleme (Tanılama sekmesi) K-LINE'a bağlı ve çalışıyor.
+
+============================================================
+2) PROGRAMDA OLMAYAN / HENÜZ K-LINE'A BAĞLANMAMIŞ ÖZELLİKLER
+============================================================
+
+*** ÖNEMLİ: "Ayarlar" (Servis Ayarları) ekranındaki "Opsiyonel Ayarlar" bölümü
+    şu an K-LINE'A HİÇ BAĞLI DEĞİL. ***
+- optional_settings_screen.dart içindeki 13 alanın TAMAMI (hız göstergesi
+  faktörü, B7 tanıma, askeri dimmer, aşırı hız ön uyarı süresi, kontak seçeneği,
+  mesafe birimi, seyahat sayacı sıfırlama, IMS kaynağı, CAN A/C baud hızı,
+  GNSS anteni, periyodik DAGS, kart varlık uyarısı) sadece ekranda yerel
+  (in-memory) bir nesneyi güncelliyor; "Tüm Değişiklikleri Kaydet" butonu
+  gerçekte 700ms'lik sahte bir bekleme yapıp "başarılı" mesajı gösteriyor,
+  ama hiçbir veri takografa gönderilmiyor ve hiçbir yere kalıcı kaydedilmiyor.
+- Bu alanların karşılık geldiği K-LINE kayıt ID'leri (0xFD00–0xFD53, 0x8250,
+  0x8255) kline_records.dart içinde zaten tanımlı ama hiçbir yerden kullanılmıyor.
+
+Diğer bilinen eksikler (bu oturumun kapsamı dışında bırakıldı):
+- Servis Ayarları sekmesindeki "Foto Sensör / Esnek Anahtar" alanı da takograf
+  ayarı gibi gösteriliyor ama sadece SharedPreferences'a (yerel) kaydediliyor,
+  K-LINE'a gitmiyor.
+- Dashboard'daki "W-Sabiti Ölç" akışı: ölçüm hiç başlamıyor (onMeasure callback'i
+  hiçbir yerden verilmiyor) ve ölçüm sonucu bile K-LINE'a yazılmıyor, sadece
+  yerel state güncelleniyor.
+- PIN doğrulaması (_isPinAuthenticated) şu an sadece kozmetik bir rozet;
+  yazma işlemlerini fiilen kilitlemiyor — PIN girilmeden de yazma yapılabiliyor.
+- Cihazdan OKUMA tarafında (bağlantı kurulunca CalibrationSnapshot ile
+  otomatik doldurulan alanlar) şu yeni eklenen/düzeltilen parametreler henüz
+  cihazdan geri okunmuyor: trip_distance, utc_offset, heartbeat, tco1_priority,
+  tco1_rate, prewarning_*, download_period_*, reg_date, ecu_install_date,
+  pproos, teeth_count. Yani bu alanlara YAZMAK artık çalışıyor, ama cihaza
+  bağlanır bağlanmaz ekranda "mevcut değer" olarak boş görünebilirler (siz
+  bir kere elle girip yazana kadar).
+
+============================================================
+3) BU OTURUMDA (SON KONUŞMAMIZDA) NE YAPTIK
+============================================================
+
+Sorun: "Kalibrasyon" sekmesinde bazı parametreler "Onayla & Yaz" butonuna
+basılınca aslında hiçbir şey göndermiyordu, sessizce "yazma başarısız"
+hatası veriyordu. 23 parametreden 9'u (trip_distance, datetime, utc_offset,
+code_page, heartbeat, tco1_priority, tco1_rate, prewarning, download_period)
+CalibrationScreen._writeCalParam() içindeki switch'te hiç ele alınmıyordu.
+
+Yapılan değişiklikler:
+1. lib/models/calibration_data.dart
+   - 'code_page' parametresi tamamen kaldırıldı (protokol dokümanında
+     (CalibrationMessages.md) karşılığı olan bir K-LINE kaydı bulunamadı;
+     uydurma bir kayıt ID'si kullanmak yerine kaldırmayı tercih ettik).
+   - 'prewarning' (tek alan) yerine 3 ayrı parametre eklendi:
+     prewarning_card1, prewarning_tacho, prewarning_cal.
+   - 'download_period' (tek alan) yerine 2 ayrı parametre eklendi:
+     download_period_vu, download_period_card.
+     (Sebep: protokolde bu ikisi tek değer değil, sırasıyla 3 ve 2 ayrı
+     gün sayısı gerektiriyor.)
+2. lib/kline/parameter_validation.dart
+   - Yeni parametreler için sayı aralığı doğrulamaları eklendi.
+   - 'datetime' tipi artık tam tarih+saat (ISO-8601) olarak doğrulanıyor;
+     eskiden yanlışlıkla sadece tarih (YYYY-MM-DD) kabul ediyordu.
+3. lib/kline/kline_codec.dart
+   - UTC offset "counter" hesaplaması dışarıya açık bir yardımcı fonksiyon
+     haline getirildi (utcOffsetCounter), tekrar kullanılabilmesi için.
+4. lib/screens/calibration_screen.dart (_writeCalParam)
+   - trip_distance, heartbeat, tco1_priority, tco1_rate için eksik olan
+     switch case'leri eklendi (kayıt ID'leri ve encode fonksiyonları zaten
+     mevcuttu, sadece bağlanmamışlardı).
+   - utc_offset ve datetime artık kendi özel K-LINE fonksiyonlarını
+     (writeUtcOffset / writeDateTime) çağırıyor.
+   - prewarning_* ve download_period_* parametreleri, kardeş alanların
+     güncel değerleriyle birleştirilip tek bir K-LINE çağrısında
+     (writePrewarningTimes / writeDownloadPeriods) gönderiliyor.
+5. lib/screens/calibration/edit_parameter_screen.dart
+   - 'Tarih ve Saat' (datetime) parametresi için manuel klavye yerine tek
+     dokunuşluk "Şimdi Senkronize Et" butonu eklendi (telefonun o anki
+     tarih/saatini takografa gönderiyor). Eskiden bu alan için sayısal
+     klavyede ':' veya '-' tuşu olmadığından manuel giriş zaten mümkün
+     değildi — bu da düzeltilmiş oldu.
+
+Doğrulama: flutter analyze temiz. flutter test içinde 1 hata var ama bizim
+değişikliklerimizle ilgisi yok (test/widget_test.dart, MonitorScreen ile
+ilgili, önceden de bozuktu — main.dart/monitor_screen.dart'a dokunmadık).
+
+============================================================
+4) BİR SONRAKİ OTURUMDA YAPILABİLECEKLER (öneri, henüz karar verilmedi)
+============================================================
+- Opsiyonel Ayarlar ekranındaki 13 alanı gerçekten K-LINE'a bağlamak
+  (0xFD00–0xFD53 / 0x8250 / 0x8255 kayıtları zaten tanımlı).
+- Servis Ayarları'ndaki "Foto Sensör" alanını K-LINE'a bağlamak.
+- "W-Sabiti Ölç" akışını gerçek IO Control (ShortTermAdjustment) çağrılarıyla
+  çalışır hale getirmek.
+- PIN doğrulamasının yazma işlemlerini fiilen kilitlemesini sağlamak.
+- Yeni eklenen parametrelerin (trip_distance, utc_offset, heartbeat, vb.)
+  bağlantı anında cihazdan okunup ekrana yansıtılmasını sağlamak
+  (readAllCalibrationData / CalibrationSnapshot genişletilerek).
