@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../bluetooth/models/ble_device_result.dart';
 import '../bluetooth/models/log_entry.dart';
 import '../bluetooth/repositories/ble_connection_repository.dart';
+import '../bluetooth/services/ble_connection_service.dart';
 import '../core/app_logger.dart';
+import '../core/app_theme.dart';
 import '../kline/kline_codec.dart';
 import '../kline/kline_records.dart';
 import '../kline/kline_service.dart';
@@ -47,6 +49,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   String? _deviceHwVersion;
   String? _deviceSwVersion;
   String? _deviceSerial;
+  String? _deviceSystemSupplierId;
+  String? _deviceSwNumber;
+  String? _deviceExhaustRegNumber;
+  String? _bleManufacturer;
+  String? _bleModel;
 
   @override
   void initState() {
@@ -67,6 +74,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     if (!mounted) return;
     setState(() => _settings = loaded);
     AppLogger.instance.setTestMode(_settings.testModeEnabled);
+    AppTheme.instance.setDark(_settings.darkThemeEnabled);
   }
 
   Future<void> _saveSettings() async {
@@ -100,9 +108,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   Future<bool> _writeCalParam(String id, String value) async {
     if (_klineService == null) return false;
+    if (!_isPinAuthenticated) {
+      throw ParamValidationException(
+        'PIN doğrulaması gerekli. Devam etmeden önce Ana Sayfa\'dan atölye PIN\'i ile giriş yapın.',
+      );
+    }
     final param = _params.firstWhere((p) => p.id == id);
-    final normalized = ParameterValidator.validate(param, value);
     try {
+      final normalized = ParameterValidator.validate(param, value);
       switch (id) {
         case 'utc_offset':
           await _klineService!.writeUtcOffset(_parseUtcOffsetMinutes(normalized));
@@ -188,6 +201,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       });
       return true;
     } catch (e) {
+      if (e is ParamValidationException) rethrow;
       AppLogger.instance.log(
         'Write error [$id]: $e',
         level: LogLevel.error,
@@ -221,23 +235,31 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     return KLineCodec.utcOffsetCounter(_parseUtcOffsetMinutes(raw));
   }
 
-  int _paramIntValue(String id) =>
-      int.tryParse(_params.firstWhere((p) => p.id == id).value ?? '') ?? 0;
+  // Değişmeyen kardeş alan hiç okunmamışsa (value == null) sessizce 0
+  // yazmak yerine hata fırlatır — bkz. SPRINT_BACKLOG.md H11.
+  int _requireSiblingValue(String changedId, String normalized, String siblingId) {
+    if (siblingId == changedId) return int.parse(normalized);
+    final sibling = _params.firstWhere((p) => p.id == siblingId);
+    if (sibling.value == null) {
+      throw ParamValidationException(
+        "'${sibling.label}' henüz okunmadı — bağlı alanların hepsi bilinmeden yazma güvenli değil.",
+      );
+    }
+    return int.parse(sibling.value!);
+  }
 
   Future<void> _writePrewarning(String changedId, String normalized) async {
-    int valueOf(String id) => id == changedId ? int.parse(normalized) : _paramIntValue(id);
     await _klineService!.writePrewarningTimes(
-      valueOf('prewarning_card1'),
-      valueOf('prewarning_tacho'),
-      valueOf('prewarning_cal'),
+      _requireSiblingValue(changedId, normalized, 'prewarning_card1'),
+      _requireSiblingValue(changedId, normalized, 'prewarning_tacho'),
+      _requireSiblingValue(changedId, normalized, 'prewarning_cal'),
     );
   }
 
   Future<void> _writeDownloadPeriod(String changedId, String normalized) async {
-    int valueOf(String id) => id == changedId ? int.parse(normalized) : _paramIntValue(id);
     await _klineService!.writeDownloadPeriods(
-      valueOf('download_period_vu'),
-      valueOf('download_period_card'),
+      _requireSiblingValue(changedId, normalized, 'download_period_vu'),
+      _requireSiblingValue(changedId, normalized, 'download_period_card'),
     );
   }
 
@@ -256,32 +278,41 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: CalColors.background,
-          appBar: AppBar(
-            backgroundColor: CalColors.surface,
-            elevation: 0,
-            surfaceTintColor: Colors.transparent,
-            title: const Text(
-              'Ayarlar',
-              style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18),
+        // AnimatedBuilder so this route's own chrome (AppBar/background) reacts
+        // immediately to the dark-theme toggle inside ServiceSettingsTab below —
+        // that toggle only rebuilds its own subtree via setState, which does not
+        // reach back up into this pushed route's Scaffold otherwise.
+        builder: (_) => AnimatedBuilder(
+          animation: AppTheme.instance.darkNotifier,
+          builder: (_, _) => Scaffold(
+            backgroundColor: CalColors.background,
+            appBar: AppBar(
+              backgroundColor: CalColors.surface,
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              title: Text(
+                'Ayarlar',
+                style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(height: 1, color: CalColors.outlineVariant),
+              ),
             ),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(1),
-              child: Container(height: 1, color: CalColors.outlineVariant),
+            body: ServiceSettingsTab(
+              settings: _settings,
+              isPinAuthenticated: _isPinAuthenticated,
+              onSettingsChanged: () {
+                setState(() {});
+                _saveSettings();
+              },
+              onAuthChanged: (v) => setState(() => _isPinAuthenticated = v),
+              deviceModel: _deviceHwNumber,
+              firmwareVersion: _deviceSwVersion,
+              serialNumber: _deviceSerial,
+              hwVersion: _deviceHwVersion,
+              klineService: _klineService,
             ),
-          ),
-          body: ServiceSettingsTab(
-            settings: _settings,
-            onSettingsChanged: () {
-              setState(() {});
-              _saveSettings();
-            },
-            deviceModel: _deviceHwNumber,
-            firmwareVersion: _deviceSwVersion,
-            serialNumber: _deviceSerial,
-            hwVersion: _deviceHwVersion,
-            klineService: _klineService,
           ),
         ),
       ),
@@ -301,7 +332,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               _connectedDevice = device;
               _btRepo = repo;
               _klineService = service;
-              _isPinAuthenticated = false;
+              // Simülasyon modunda PIN doğrulamasını beklemeye gerek yok — otomatik açık.
+              _isPinAuthenticated = device.isSimulated;
             });
             AppLogger.instance.log(
               'Device connected: ${device.displayName}',
@@ -313,10 +345,41 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             _connStateSub?.cancel();
             _connStateSub = repo.connectionState.listen(_onConnectionStateChanged);
             _loadDeviceData(service);
+            _readBleDeviceInfo(repo);
           },
         ),
       ),
     );
+  }
+
+  // BLE Device Information servisinden (180A) üretici/model okur — bağlanılan
+  // cihazın gerçekten beklenen takograf adaptörü olup olmadığını Ana Sayfa'da
+  // anında görünür kılmak için. Bazı adaptörlerde bu servis olmayabilir veya
+  // okuma başarısız olabilir; bu durumda alanlar sessizce null kalır.
+  // Yalnızca gerçek BLE transport'unda anlamlıdır — Classic Bluetooth'ta
+  // readCharacteristic UUID'den bağımsız olarak paylaşılan SPP akışından
+  // okur, bu yüzden orada K-Line yanıt baytlarını yanlışlıkla "cihaz bilgisi"
+  // olarak gösterebilir.
+  Future<void> _readBleDeviceInfo(BleConnectionRepository repo) async {
+    if (repo is! FlutterBluePlusConnectionService) return;
+
+    Future<String?> read(String uuid) async {
+      try {
+        final bytes = await repo.readCharacteristic(uuid);
+        final text = utf8.decode(bytes, allowMalformed: true).trim();
+        return text.isEmpty ? null : text;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final manufacturer = await read('2A29');
+    final model = await read('2A24');
+    if (!mounted) return;
+    setState(() {
+      _bleManufacturer = manufacturer;
+      _bleModel = model;
+    });
   }
 
   Future<bool> _loadDeviceData(KLineService service) async {
@@ -392,6 +455,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _deviceHwVersion = snap.hwVersionNumber ?? _deviceHwVersion;
     _deviceSwVersion = snap.swVersionNumber ?? _deviceSwVersion;
     _deviceSerial = snap.serialNumber ?? _deviceSerial;
+    _deviceSystemSupplierId = snap.systemSupplierIdentifier ?? _deviceSystemSupplierId;
+    _deviceSwNumber = snap.swNumber ?? _deviceSwNumber;
+    _deviceExhaustRegNumber = snap.exhaustRegOrTypeApprovalNumber ?? _deviceExhaustRegNumber;
   }
 
   void _onConnectionStateChanged(BleConnectionState state) {
@@ -426,6 +492,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       _deviceHwVersion = null;
       _deviceSwVersion = null;
       _deviceSerial = null;
+      _deviceSystemSupplierId = null;
+      _deviceSwNumber = null;
+      _deviceExhaustRegNumber = null;
+      _bleManufacturer = null;
+      _bleModel = null;
       _manualDisconnectInProgress = false;
       for (final p in _params) {
         p.value = null;
@@ -480,11 +551,20 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               reports: _reports,
               params: _params,
               dtcCodes: _dtcCodes,
-              onWConstantWritten: (v) => _updateParam('w_constant', v),
+              onWriteParam: _klineService != null ? _writeCalParam : null,
               connectedDevice: _connectedDevice,
               onConnectDevice: () => _openBleScan(context),
               onDisconnectDevice: _disconnectDevice,
               klineService: _klineService,
+              bleManufacturer: _bleManufacturer,
+              bleModel: _bleModel,
+              deviceHwNumber: _deviceHwNumber,
+              deviceHwVersion: _deviceHwVersion,
+              deviceSwVersion: _deviceSwVersion,
+              deviceSerial: _deviceSerial,
+              deviceSystemSupplierId: _deviceSystemSupplierId,
+              deviceSwNumber: _deviceSwNumber,
+              deviceExhaustRegNumber: _deviceExhaustRegNumber,
             )),
             _tab(1, CalibrationParamsTab(
               params: _params,
@@ -517,7 +597,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xFFEEF0F8),
+      backgroundColor: CalColors.surface,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
       automaticallyImplyLeading: false,
@@ -552,7 +632,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       actions: [
         if (_tabIndex == 0)
           IconButton(
-            icon: const Icon(Icons.settings_outlined, color: CalColors.onSurfaceVariant),
+            icon: Icon(Icons.settings_outlined, color: CalColors.onSurfaceVariant),
             onPressed: _openSettings,
           ),
       ],
@@ -572,7 +652,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     ];
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: CalColors.surface,
         border: Border(top: BorderSide(color: CalColors.outlineVariant)),
       ),

@@ -35,14 +35,14 @@ class _TestLogScreenState extends State<TestLogScreen> {
             _filtered.add(e);
           }
         });
-        if (_autoScroll) _scrollToBottom();
+        if (_autoScroll) _scrollToNewest();
       }
     });
     _scrollController.addListener(() {
       if (!_scrollController.hasClients) return;
-      final atBottom = _scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 80;
-      if (_autoScroll != atBottom) setState(() => _autoScroll = atBottom);
+      final atTop = _scrollController.position.pixels <=
+          _scrollController.position.minScrollExtent + 80;
+      if (_autoScroll != atTop) setState(() => _autoScroll = atTop);
     });
   }
 
@@ -53,11 +53,11 @@ class _TestLogScreenState extends State<TestLogScreen> {
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  void _scrollToNewest() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          _scrollController.position.minScrollExtent,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
@@ -80,7 +80,7 @@ class _TestLogScreenState extends State<TestLogScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Günlüğü Temizle',
+        title: Text('Günlüğü Temizle',
             style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.primary)),
         content: const Text('Tüm kayıtlar silinecek. Bu işlem geri alınamaz.'),
         actions: [
@@ -114,13 +114,13 @@ class _TestLogScreenState extends State<TestLogScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: CalColors.primary),
+          icon: Icon(Icons.arrow_back, color: CalColors.primary),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Test Günlüğü',
+            Text('Test Günlüğü',
                 style: TextStyle(
                     color: CalColors.primary,
                     fontWeight: FontWeight.w700,
@@ -139,12 +139,12 @@ class _TestLogScreenState extends State<TestLogScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.copy_all, color: CalColors.onSurfaceVariant),
+            icon: Icon(Icons.copy_all, color: CalColors.onSurfaceVariant),
             tooltip: 'Panoya kopyala',
             onPressed: _logs.isEmpty ? null : _copyAll,
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: CalColors.onSurfaceVariant),
+            icon: Icon(Icons.delete_outline, color: CalColors.onSurfaceVariant),
             tooltip: 'Günlüğü temizle',
             onPressed: _logs.isEmpty ? null : _clearAll,
           ),
@@ -174,14 +174,14 @@ class _TestLogScreenState extends State<TestLogScreen> {
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: filtered.length,
-                    itemBuilder: (_, i) => _LogLine(entry: filtered[i]),
+                    itemBuilder: (_, i) => _LogLine(entry: filtered[filtered.length - 1 - i]),
                   ),
           ),
           if (!_autoScroll)
             GestureDetector(
               onTap: () {
                 setState(() => _autoScroll = true);
-                _scrollToBottom();
+                _scrollToNewest();
               },
               child: Container(
                 width: double.infinity,
@@ -189,7 +189,7 @@ class _TestLogScreenState extends State<TestLogScreen> {
                 color: CalColors.primaryContainer,
                 alignment: Alignment.center,
                 child: const Text(
-                  '↓ En alta git',
+                  '↑ En yeniye git',
                   style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -250,13 +250,13 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  final Color color;
+  final Color? color;
 
   const _FilterChip({
     required this.label,
     required this.selected,
     required this.onTap,
-    this.color = CalColors.primary,
+    this.color,
   });
 
   @override
@@ -267,10 +267,10 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? color : CalColors.surfaceContainer,
+          color: selected ? (color ?? CalColors.primary) : CalColors.surfaceContainer,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? color : CalColors.outlineVariant,
+            color: selected ? (color ?? CalColors.primary) : CalColors.outlineVariant,
           ),
         ),
         child: Text(
@@ -305,7 +305,7 @@ class _LogLine extends StatelessWidget {
           children: [
             TextSpan(
               text: '[$time] ',
-              style: const TextStyle(color: CalColors.onSurfaceVariant),
+              style: TextStyle(color: CalColors.onSurfaceVariant),
             ),
             TextSpan(
               text: '[${entry.prefix}] ',
@@ -320,7 +320,7 @@ class _LogLine extends StatelessWidget {
             ),
             TextSpan(
               text: entry.message,
-              style: const TextStyle(color: CalColors.onSurface),
+              style: TextStyle(color: CalColors.onSurface),
             ),
           ],
         ),
@@ -390,7 +390,7 @@ class _EmptyState extends StatelessWidget {
             testModeEnabled
                 ? 'Test modu aktif.\nİşlem yaptıkça loglar burada görünecek.'
                 : 'Test modu kapalı.\nAyarlar sekmesinden aktif edin.',
-            style: const TextStyle(color: CalColors.onSurfaceVariant, fontSize: 14),
+            style: TextStyle(color: CalColors.onSurfaceVariant, fontSize: 14),
             textAlign: TextAlign.center,
           ),
         ],

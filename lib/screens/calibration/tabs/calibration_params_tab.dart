@@ -130,7 +130,7 @@ class _CalibrationParamsTabState extends State<CalibrationParamsTab> {
           category: LogCategory.calibration,
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Tüm parametreler takografa yazıldı'),
             backgroundColor: CalColors.accent,
             behavior: SnackBarBehavior.floating,
@@ -175,11 +175,12 @@ class _CalibrationParamsTabState extends State<CalibrationParamsTab> {
   }
 
   void _openWMeasure() {
+    if (widget.onWriteParam == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => WConstantMeasurementScreen(
-          onWriteResult: (v) => widget.onParamChanged('w_constant', v),
+          onWriteResult: (v) => widget.onWriteParam!('w_constant', v),
         ),
       ),
     );
@@ -294,7 +295,7 @@ class _CalibrationParamsTabState extends State<CalibrationParamsTab> {
             ),
           ),
         ] else
-          const SliverFillRemaining(
+          SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
               child: Padding(
@@ -347,7 +348,7 @@ class _CalibrationParamsTabState extends State<CalibrationParamsTab> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Parametreler takografın dahili flash belleğine yazılacaktır.',
                   style: TextStyle(fontSize: 11, color: CalColors.outline),
                   textAlign: TextAlign.center,
@@ -410,7 +411,7 @@ class _DisconnectedBanner extends StatelessWidget {
         color: CalColors.secondaryContainer,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Icon(Icons.bluetooth_disabled, color: CalColors.onSecondaryContainer, size: 18),
           SizedBox(width: 10),
@@ -463,9 +464,9 @@ class _ConnectionBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               color: isSimulated
-                  ? const Color(0xFFF59E0B)
+                  ? const Color(0xFF92400E)
                   : isConnected
-                      ? CalColors.tertiary
+                      ? CalColors.onTertiaryFixed
                       : CalColors.outline,
               fontWeight: FontWeight.w600,
             ),
@@ -498,7 +499,7 @@ class _WMeasureCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: CalColors.outlineVariant),
           ),
-          child: const Row(
+          child: Row(
             children: [
               Icon(Icons.speed, color: CalColors.primaryContainer, size: 26),
               SizedBox(width: 12),
@@ -548,12 +549,12 @@ class _ParamSection extends StatelessWidget {
             children: [
               Text(
                 title.toUpperCase(),
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CalColors.outline, letterSpacing: 0.8),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CalColors.outline, letterSpacing: 0.8),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(color: CalColors.surfaceContainer, borderRadius: BorderRadius.circular(4)),
-                child: Text(tag, style: const TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, fontWeight: FontWeight.w500)),
+                child: Text(tag, style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, fontWeight: FontWeight.w500)),
               ),
             ],
           ),
@@ -571,7 +572,7 @@ class _ParamSection extends StatelessWidget {
                   children: [
                     _ParamRow(param: p, enabled: enabled, onEdit: () => onEdit(p)),
                     if (i < params.length - 1)
-                      const Divider(height: 1, indent: 16, color: CalColors.outlineVariant),
+                      Divider(height: 1, indent: 16, color: CalColors.outlineVariant),
                   ],
                 );
               }),
@@ -602,7 +603,7 @@ class _ParamRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(param.label, style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                  Text(param.label, style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
                   const SizedBox(height: 3),
                   Text(
                     param.value == null
@@ -610,13 +611,13 @@ class _ParamRow extends StatelessWidget {
                         : param.unit.isNotEmpty
                             ? '${param.value} ${param.unit}'
                             : param.value!,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()]),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()]),
                   ),
                 ],
               ),
             ),
             if (enabled)
-              const Row(
+              Row(
                 children: [
                   Icon(Icons.edit, size: 14, color: CalColors.primary),
                   SizedBox(width: 4),

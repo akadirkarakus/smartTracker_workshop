@@ -1,7 +1,11 @@
-import 'package:flutter/material.dart';
-import '../../../models/calibration_data.dart';
+import 'dart:typed_data';
 
-class ReportsTab extends StatelessWidget {
+import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
+import '../../../models/calibration_data.dart';
+import '../report_pdf.dart';
+
+class ReportsTab extends StatefulWidget {
   final List<CalParam> params;
   final List<ComponentTest> tests;
   final String? deviceModel;
@@ -22,8 +26,21 @@ class ReportsTab extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final paramMap = {for (final p in params) p.id: p};
+  State<ReportsTab> createState() => _ReportsTabState();
+}
+
+class _ReportsTabState extends State<ReportsTab> {
+  final _notesController = TextEditingController();
+  bool _isExporting = false;
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Map<String, String> _paramValues() {
+    final paramMap = {for (final p in widget.params) p.id: p};
     String val(String id) => paramMap[id]?.value ?? '—';
     String valWithUnit(String id) {
       final p = paramMap[id];
@@ -32,7 +49,75 @@ class ReportsTab extends StatelessWidget {
       if (v == null) return '—';
       return p.unit.isNotEmpty ? '$v ${p.unit}' : v;
     }
-    final passedCount = tests.where((t) => t.status == TestStatus.passed).length;
+    return {
+      'Plaka (VRN)': val('vrn'),
+      'VIN': val('vin'),
+      'Hız Limiti': valWithUnit('speed_limit'),
+      'Kilometre': valWithUnit('odometer'),
+      'Lastik Boyutu': val('tyre_size'),
+      'Lastik Çevresi': valWithUnit('tyre_circ'),
+      'K-Sabiti': valWithUnit('k_constant'),
+      'W-Sabiti': valWithUnit('w_constant'),
+      'Son. Kal. Tarihi': val('next_cal_date'),
+    };
+  }
+
+  Future<Uint8List> _buildPdf() {
+    final hasFailure = widget.tests.any((t) => t.status == TestStatus.failed);
+    final anyTestRan = widget.tests.any((t) => t.status != TestStatus.idle);
+    return buildCalibrationReportPdf(ReportPdfData(
+      plate: _paramValues()['Plaka (VRN)'] ?? '—',
+      generatedAt: DateTime.now(),
+      paramValues: _paramValues(),
+      tests: widget.tests,
+      deviceModel: widget.deviceModel,
+      serialNumber: widget.serialNumber,
+      firmwareVersion: widget.firmwareVersion,
+      hwVersion: widget.hwVersion,
+      workshopName: widget.workshopName,
+      operatorNotes: _notesController.text,
+      hasFailure: hasFailure,
+      anyTestRan: anyTestRan,
+    ));
+  }
+
+  Future<void> _exportPdf() async {
+    setState(() => _isExporting = true);
+    try {
+      final bytes = await _buildPdf();
+      final plate = _paramValues()['Plaka (VRN)'] ?? 'rapor';
+      await Printing.sharePdf(bytes: bytes, filename: 'kalibrasyon_${plate.replaceAll(' ', '_')}.pdf');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF oluşturulamadı: $e'), backgroundColor: CalColors.error),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  Future<void> _printPdf() async {
+    setState(() => _isExporting = true);
+    try {
+      final bytes = await _buildPdf();
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Yazdırma başlatılamadı: $e'), backgroundColor: CalColors.error),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tests = widget.tests;
+    final values = _paramValues();
+    final hasFailure = tests.any((t) => t.status == TestStatus.failed);
+    final anyTestRan = tests.any((t) => t.status != TestStatus.idle);
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
@@ -42,29 +127,21 @@ class ReportsTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Summary header
-                _ReportSummaryCard(plate: val('vrn')),
+                _ReportSummaryCard(plate: values['Plaka (VRN)']!, hasFailure: hasFailure, anyTestRan: anyTestRan),
                 const SizedBox(height: 14),
 
                 // Calibration parameters
                 _SectionHeader(title: 'Kalibrasyon Parametreleri', icon: Icons.settings_input_component),
                 const SizedBox(height: 8),
                 _ParamGrid(items: [
-                  _GridItem('Plaka (VRN)', val('vrn')),
-                  _GridItem('VIN', val('vin')),
-                  _GridItem('Hız Limiti', valWithUnit('speed_limit')),
-                  _GridItem('Kilometre', valWithUnit('odometer')),
-                  _GridItem('Lastik Boyutu', val('tyre_size')),
-                  _GridItem('Lastik Çevresi', valWithUnit('tyre_circ')),
-                  _GridItem('K-Sabiti', valWithUnit('k_constant')),
-                  _GridItem('W-Sabiti', valWithUnit('w_constant')),
-                  _GridItem('Son. Kal. Tarihi', val('next_cal_date')),
+                  for (final e in values.entries) _GridItem(e.key, e.value),
                 ]),
                 const SizedBox(height: 14),
 
                 // Test results
                 _SectionHeader(title: 'Test Sonuçları', icon: Icons.fact_check_outlined),
                 const SizedBox(height: 8),
-                _TestResultsCard(tests: tests, passedCount: passedCount),
+                _TestResultsCard(tests: tests),
                 const SizedBox(height: 14),
 
                 // Hardware & workshop info (in a row)
@@ -72,13 +149,13 @@ class ReportsTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: _HardwareCard(
-                      deviceModel: deviceModel,
-                      serialNumber: serialNumber,
-                      firmwareVersion: firmwareVersion,
-                      hwVersion: hwVersion,
+                      deviceModel: widget.deviceModel,
+                      serialNumber: widget.serialNumber,
+                      firmwareVersion: widget.firmwareVersion,
+                      hwVersion: widget.hwVersion,
                     )),
                     const SizedBox(width: 12),
-                    Expanded(child: _WorkshopCard(workshopName: workshopName)),
+                    Expanded(child: _WorkshopCard(workshopName: widget.workshopName)),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -86,7 +163,7 @@ class ReportsTab extends StatelessWidget {
                 // Operator notes
                 _SectionHeader(title: 'Operatör Notları', icon: Icons.description_outlined),
                 const SizedBox(height: 8),
-                const _OperatorNotes(),
+                _OperatorNotes(controller: _notesController),
                 const SizedBox(height: 20),
 
                 // Action buttons
@@ -96,14 +173,19 @@ class ReportsTab extends StatelessWidget {
                       child: SizedBox(
                         height: 50,
                         child: ElevatedButton.icon(
-                          onPressed: () {},
+                          onPressed: _isExporting ? null : _exportPdf,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: CalColors.primary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             elevation: 0,
                           ),
-                          icon: const Icon(Icons.picture_as_pdf, size: 18),
+                          icon: _isExporting
+                              ? const SizedBox(
+                                  width: 16, height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.picture_as_pdf, size: 18),
                           label: const Text('PDF Dışa Aktar', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
                         ),
                       ),
@@ -113,13 +195,13 @@ class ReportsTab extends StatelessWidget {
                       child: SizedBox(
                         height: 50,
                         child: OutlinedButton.icon(
-                          onPressed: () {},
+                          onPressed: _isExporting ? null : _printPdf,
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: CalColors.primary, width: 2),
+                            side: BorderSide(color: CalColors.primary, width: 2),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          icon: const Icon(Icons.print, size: 18, color: CalColors.primary),
-                          label: const Text('Yazdır', style: TextStyle(color: CalColors.primary, fontSize: 14, fontWeight: FontWeight.w700)),
+                          icon: Icon(Icons.print, size: 18, color: CalColors.primary),
+                          label: Text('Yazdır', style: TextStyle(color: CalColors.primary, fontSize: 14, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     ),
@@ -139,14 +221,33 @@ class ReportsTab extends StatelessWidget {
 
 class _ReportSummaryCard extends StatelessWidget {
   final String plate;
+  final bool hasFailure;
+  final bool anyTestRan;
 
-  const _ReportSummaryCard({required this.plate});
+  const _ReportSummaryCard({required this.plate, required this.hasFailure, required this.anyTestRan});
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} '
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final Color badgeColor;
+    final IconData badgeIcon;
+    final String badgeLabel;
+    if (hasFailure) {
+      badgeColor = CalColors.error;
+      badgeIcon = Icons.cancel;
+      badgeLabel = 'BAŞARISIZ';
+    } else if (anyTestRan) {
+      badgeColor = CalColors.accent;
+      badgeIcon = Icons.check_circle;
+      badgeLabel = 'BAŞARILI';
+    } else {
+      badgeColor = CalColors.outline;
+      badgeIcon = Icons.hourglass_empty;
+      badgeLabel = 'TEST BEKLENİYOR';
+    }
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -161,13 +262,20 @@ class _ReportSummaryCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(plate, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
+                Text(plate, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today, size: 13, color: CalColors.onSurfaceVariant),
+                    Icon(Icons.calendar_today, size: 13, color: CalColors.onSurfaceVariant),
                     const SizedBox(width: 4),
-                    Text('Oluşturuldu: $dateStr', style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                    Flexible(
+                      child: Text(
+                        'Oluşturuldu: $dateStr',
+                        style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -175,12 +283,12 @@ class _ReportSummaryCard extends StatelessWidget {
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: CalColors.accent, borderRadius: BorderRadius.circular(20)),
-            child: const Row(
+            decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(20)),
+            child: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white, size: 16),
-                SizedBox(width: 4),
-                Text('BAŞARILI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                Icon(badgeIcon, color: Colors.white, size: 16),
+                const SizedBox(width: 4),
+                Text(badgeLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
               ],
             ),
           ),
@@ -202,7 +310,7 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Icon(icon, color: CalColors.primary, size: 20),
         const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.primary)),
+        Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.primary)),
       ],
     );
   }
@@ -238,9 +346,9 @@ class _ParamGrid extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.label, style: const TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                Text(item.label, style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
                 const SizedBox(height: 2),
-                Text(item.value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
+                Text(item.value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
               ],
             ),
           );
@@ -250,11 +358,30 @@ class _ParamGrid extends StatelessWidget {
   }
 }
 
+IconData _statusIcon(TestStatus status) {
+  switch (status) {
+    case TestStatus.passed: return Icons.check_circle;
+    case TestStatus.failed: return Icons.cancel;
+    case TestStatus.unsupported: return Icons.help_outline;
+    case TestStatus.running: return Icons.hourglass_top;
+    case TestStatus.idle: return Icons.circle_outlined;
+  }
+}
+
+Color _statusColor(TestStatus status) {
+  switch (status) {
+    case TestStatus.passed: return CalColors.accent;
+    case TestStatus.failed: return CalColors.error;
+    case TestStatus.unsupported: return CalColors.onSecondaryContainer;
+    case TestStatus.running: return CalColors.primary;
+    case TestStatus.idle: return CalColors.outline;
+  }
+}
+
 class _TestResultsCard extends StatelessWidget {
   final List<ComponentTest> tests;
-  final int passedCount;
 
-  const _TestResultsCard({required this.tests, required this.passedCount});
+  const _TestResultsCard({required this.tests});
 
   @override
   Widget build(BuildContext context) {
@@ -266,7 +393,7 @@ class _TestResultsCard extends StatelessWidget {
         border: Border.all(color: CalColors.outlineVariant),
       ),
       child: doneTests.isEmpty
-          ? const Padding(
+          ? Padding(
               padding: EdgeInsets.all(20),
               child: Text('Henüz test çalıştırılmadı. Tanılama sekmesinden testleri başlatın.', style: TextStyle(color: CalColors.onSurfaceVariant, fontSize: 13), textAlign: TextAlign.center),
             )
@@ -280,16 +407,20 @@ class _TestResultsCard extends StatelessWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(t.name, style: const TextStyle(fontSize: 14, color: CalColors.onSurface)),
-                          Icon(
-                            t.status == TestStatus.passed ? Icons.check_circle : Icons.cancel,
-                            color: t.status == TestStatus.passed ? CalColors.accent : CalColors.error,
-                            size: 22,
+                          Expanded(
+                            child: Text(
+                              t.name,
+                              style: TextStyle(fontSize: 14, color: CalColors.onSurface),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
                           ),
+                          const SizedBox(width: 8),
+                          Icon(_statusIcon(t.status), color: _statusColor(t.status), size: 22),
                         ],
                       ),
                     ),
-                    if (i < doneTests.length - 1) const Divider(height: 1, indent: 14, color: CalColors.outlineVariant),
+                    if (i < doneTests.length - 1) Divider(height: 1, indent: 14, color: CalColors.outlineVariant),
                   ],
                 );
               }),
@@ -323,7 +454,7 @@ class _HardwareCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.engineering_outlined, color: CalColors.primary, size: 18),
               SizedBox(width: 6),
@@ -358,7 +489,7 @@ class _WorkshopCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.business_outlined, color: CalColors.primary, size: 18),
               SizedBox(width: 6),
@@ -386,8 +517,8 @@ class _HwRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: CalColors.onSurfaceVariant)),
-          Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+          Text(label, style: TextStyle(fontSize: 10, color: CalColors.onSurfaceVariant)),
+          Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
         ],
       ),
     );
@@ -395,7 +526,9 @@ class _HwRow extends StatelessWidget {
 }
 
 class _OperatorNotes extends StatelessWidget {
-  const _OperatorNotes();
+  final TextEditingController controller;
+
+  const _OperatorNotes({required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -407,15 +540,23 @@ class _OperatorNotes extends StatelessWidget {
         border: Border.all(color: CalColors.outlineVariant),
       ),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
           border: Border(left: BorderSide(color: CalColors.primary, width: 3)),
           color: CalColors.surfaceLow,
           borderRadius: const BorderRadius.only(topRight: Radius.circular(6), bottomRight: Radius.circular(6)),
         ),
-        child: const Text(
-          '"Standart periyodik muayene gerçekleştirildi. Görsel inceleme sırasında tespit edilen hafif yıpranma nedeniyle sensör kablosu değiştirildi. Tüm kalibrasyon parametreleri ana üniteyle karşılaştırılmış ve AB 561/2006 kapsamındaki yasal toleranslar dahilinde doğrulanmıştır."',
-          style: TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant, fontStyle: FontStyle.italic, height: 1.5),
+        child: TextField(
+          controller: controller,
+          maxLines: 4,
+          minLines: 3,
+          style: TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant, height: 1.5),
+          decoration: const InputDecoration(
+            hintText: 'Yapılan işlem ve gözlemleri buraya yazın (rapora ve PDF çıktısına eklenir)...',
+            hintStyle: TextStyle(fontStyle: FontStyle.italic),
+            border: InputBorder.none,
+            isDense: true,
+          ),
         ),
       ),
     );

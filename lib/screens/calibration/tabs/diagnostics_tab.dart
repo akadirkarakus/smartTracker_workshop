@@ -30,20 +30,6 @@ class DiagnosticsTab extends StatefulWidget {
   State<DiagnosticsTab> createState() => _DiagnosticsTabState();
 }
 
-// Maps UI test IDs to KWP2000 RoutineControl routine IDs (Section 5 / Flow 12–21)
-const Map<String, int> _testRoutineMap = {
-  'display':      KLineRoutineIds.displayTest,
-  'lcd_neg':      KLineRoutineIds.lcdNegativeMode,
-  'printer':      KLineRoutineIds.printerTest,
-  'hardware':     KLineRoutineIds.hardwareTest,
-  'card_reader':  KLineRoutineIds.smartCardReaderTest,
-  'keypad':       KLineRoutineIds.buttonTestLoop,
-  'battery':      KLineRoutineIds.batteryLevel,
-  'data_memory':  KLineRoutineIds.dataMemoryIntegrity,
-  'sw_integrity': KLineRoutineIds.softwareIntegrity,
-  'buzzer_test':  KLineRoutineIds.buzzer,
-};
-
 class _DiagnosticsTabState extends State<DiagnosticsTab> {
   bool _isScanning = false;
   bool _scanFound = false;
@@ -93,7 +79,7 @@ class _DiagnosticsTabState extends State<DiagnosticsTab> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('DTC Temizle', style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.primary)),
+        title: Text('DTC Temizle', style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.primary)),
         content: const Text('Tüm saklanan hata kodları silinecek. Bu işlem geri alınamaz.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal')),
@@ -119,30 +105,69 @@ class _DiagnosticsTabState extends State<DiagnosticsTab> {
     );
   }
 
+  // hardware/battery/data_memory/sw_integrity/keypad/buzzer_test — cihazın
+  // kendi kendine sonuçlandırdığı veya hiç gözlemlenemeyen rutinler (bkz.
+  // kline_records.dart:kDeviceOnlyResultTestIds, CalibrationMessages.md
+  // Flow 15/17-21). Doküman bu testler için stopRoutine yanıtı göstermez —
+  // yanıt zaman aşımı hata sayılmaz, sonuç operatör tarafından cihaz
+  // ekranından kontrol edilmelidir.
+  void _showDeviceCheckDialog(String testName) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(
+          'Test Başlatıldı',
+          style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.primary),
+        ),
+        content: Text(
+          '$testName başlatıldı. Bu test için cihazdan uygulamaya bir sonuç bildirimi '
+          'gelmez — test sonucu takograf ekranı üzerinden incelenmelidir.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _startTest(ComponentTest test) async {
     if (widget.klineService == null) {
       widget.onTestUpdate(test.id, TestStatus.failed, 0);
       return;
     }
-    final routineId = _testRoutineMap[test.id];
+    final routineId = kComponentTestRoutineMap[test.id];
     if (routineId == null) {
       // clock and speed_odo require dedicated streaming flows — not handled here
-      widget.onTestUpdate(test.id, TestStatus.failed, 0);
+      widget.onTestUpdate(test.id, TestStatus.unsupported, 0);
       return;
     }
+    final deviceOnlyResult = kDeviceOnlyResultTestIds.contains(test.id);
     AppLogger.instance.log(
       'Test started: ${test.name}',
       level: LogLevel.info,
       category: LogCategory.diagnostics,
     );
     widget.onTestUpdate(test.id, TestStatus.running, 0);
+    if (deviceOnlyResult) {
+      _showDeviceCheckDialog(test.name);
+    }
     try {
       await widget.klineService!.startRoutineTest(routineId);
-      await widget.klineService!.stopRoutineTest(routineId);
+      try {
+        await widget.klineService!.stopRoutineTest(routineId);
+      } on KLineTimeoutException {
+        if (!deviceOnlyResult) rethrow;
+        // Beklenen davranış — bu test için stopRoutine yanıtı gelmeyebilir.
+      }
       if (!mounted) return;
       widget.onTestUpdate(test.id, TestStatus.passed, 100);
       AppLogger.instance.log(
-        'Test completed: ${test.name} — Passed',
+        deviceOnlyResult
+            ? 'Test completed: ${test.name} — İletişim OK, sonuç cihaz ekranından doğrulanmalı'
+            : 'Test completed: ${test.name} — Passed',
         level: LogLevel.success,
         category: LogCategory.diagnostics,
       );
@@ -196,8 +221,24 @@ class _DiagnosticsTabState extends State<DiagnosticsTab> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Hata Kodları (DTC)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
-                    Text('Son kontrol: ${TimeOfDay.now().format(context)}', style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                    Expanded(
+                      child: Text(
+                        'Hata Kodları (DTC)',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Son kontrol: ${TimeOfDay.now().format(context)}',
+                        style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -312,7 +353,7 @@ class _DiagDisconnectedBanner extends StatelessWidget {
         color: CalColors.secondaryContainer,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Icon(Icons.bluetooth_disabled, color: CalColors.onSecondaryContainer, size: 18),
           SizedBox(width: 10),
@@ -438,7 +479,7 @@ class _EmptyDtc extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             wasScanned ? 'Hata kodu bulunamadı' : 'DTC okumak için yukarıdaki butona basın',
-            style: const TextStyle(color: CalColors.onSurfaceVariant, fontSize: 14),
+            style: TextStyle(color: CalColors.onSurfaceVariant, fontSize: 14),
             textAlign: TextAlign.center,
           ),
         ],
@@ -504,16 +545,16 @@ class _DtcList extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Text(dtc.description, style: const TextStyle(fontSize: 13, color: CalColors.onSurface)),
-                          Text(dtc.module, style: const TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                          Text(dtc.description, style: TextStyle(fontSize: 13, color: CalColors.onSurface)),
+                          Text(dtc.module, style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
                         ],
                       ),
                     ),
-                    const Icon(Icons.info_outline, color: CalColors.onSurfaceVariant, size: 20),
+                    Icon(Icons.info_outline, color: CalColors.onSurfaceVariant, size: 20),
                   ],
                 ),
               ),
-              if (i < codes.length - 1) const Divider(height: 1, color: CalColors.outlineVariant),
+              if (i < codes.length - 1) Divider(height: 1, color: CalColors.outlineVariant),
             ],
           );
         }),
@@ -536,7 +577,7 @@ class _TestSectionHeader extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Flexible(child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: CalColors.primary))),
+        Flexible(child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: CalColors.primary))),
         if (hasRunnable)
           TextButton.icon(
             onPressed: isEnabled ? onRunSection : null,
@@ -592,8 +633,8 @@ class _TestCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(test.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
-                        Text(test.description, style: const TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                        Text(test.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                        Text(test.description, style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
                       ],
                     ),
                   ),
@@ -621,6 +662,7 @@ class _TestCard extends StatelessWidget {
     switch (test.status) {
       case TestStatus.passed: return CalColors.tertiaryFixed;
       case TestStatus.failed: return CalColors.errorContainer;
+      case TestStatus.unsupported: return CalColors.secondaryContainer;
       case TestStatus.running: return CalColors.surfaceLow;
       case TestStatus.idle: return CalColors.surfaceLow;
     }
@@ -646,8 +688,9 @@ class _TestCard extends StatelessWidget {
 
   Color get _iconColor {
     switch (test.status) {
-      case TestStatus.passed: return CalColors.tertiary;
+      case TestStatus.passed: return CalColors.onTertiaryFixed;
       case TestStatus.failed: return CalColors.error;
+      case TestStatus.unsupported: return CalColors.onSecondaryContainer;
       case TestStatus.running: return CalColors.primary;
       case TestStatus.idle: return CalColors.onSurfaceVariant;
     }
@@ -666,11 +709,16 @@ class _StatusButton extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (status) {
       case TestStatus.running:
-        return Text('$progress%', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: CalColors.primary));
+        return Text('$progress%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: CalColors.primary));
       case TestStatus.passed:
-        return const Icon(Icons.check_circle, color: CalColors.accent, size: 26);
+        return Icon(Icons.check_circle, color: CalColors.accent, size: 26);
       case TestStatus.failed:
-        return const Icon(Icons.cancel, color: CalColors.error, size: 26);
+        return Icon(Icons.cancel, color: CalColors.error, size: 26);
+      case TestStatus.unsupported:
+        return Tooltip(
+          message: 'Bu test bu cihazda desteklenmiyor',
+          child: Icon(Icons.help_outline, color: CalColors.onSecondaryContainer, size: 26),
+        );
       case TestStatus.idle:
         return Opacity(
           opacity: isEnabled ? 1.0 : 0.4,

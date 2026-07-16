@@ -13,6 +13,9 @@ class SimulatedConnectionService implements BleConnectionRepository {
   // ReadDataByIdentifier çağrıları gerçek cihaz gibi bu değeri geri döner.
   final Map<int, List<int>> _writtenValues = {};
 
+  // ClearDiagnosticInformation sonrası true olur; DTC listesi boşalır.
+  bool _dtcsCleared = false;
+
   @override
   Stream<BleConnectionState> get connectionState => _stateCtrl.stream;
 
@@ -21,6 +24,7 @@ class SimulatedConnectionService implements BleConnectionRepository {
 
   @override
   Future<void> connect(String deviceId) async {
+    _dtcsCleared = false;
     _emit(BleConnectionState.connecting);
     _log('Simülasyon bağlantısı başlatılıyor...', LogLevel.info);
     await Future.delayed(const Duration(milliseconds: 400));
@@ -169,6 +173,7 @@ class SimulatedConnectionService implements BleConnectionRepository {
         return _handleReadDtc(data[0]);
 
       case 0x14: // ClearDiagnosticInformation
+        _dtcsCleared = true;
         return _stdResp(0x54, []);
 
       case 0x2F: // IOControlByIdentifier
@@ -182,16 +187,19 @@ class SimulatedConnectionService implements BleConnectionRepository {
 
   List<int>? _handleReadDtc(int sub) {
     if (sub == 0x01) {
-      // reportNumberOfDTCByStatusMask → 2 mock DTCs
-      return _stdResp(0x59, [0x00, 0x02]);
+      // reportNumberOfDTCByStatusMask
+      return _stdResp(0x59, [0x00, _dtcsCleared ? 0x00 : 0x02]);
     }
     if (sub == 0x02) {
-      // reportDTCByStatusMask → 2 × (3-byte code + 1-byte status)
+      // reportDTCByStatusMask → 2 × (3-byte code + 1-byte status).
+      // Kodlar kline_dtc_mapper.dart'taki _descriptions tablosuyla eşleşir ki
+      // Tanılama sekmesi anlamlı bir açıklama/modül gösterebilsin.
+      if (_dtcsCleared) return _stdResp(0x59, []);
       return _stdResp(0x59, [
-        // DTC 1: 0x001301 status=0x08 (stored fault)
-        0x00, 0x13, 0x01, 0x08,
-        // DTC 2: 0x002005 status=0x01 (pending fault)
-        0x00, 0x20, 0x05, 0x01,
+        // DTC 1: Hareket sensörü sinyal yok — status=0x08 → saklı (bit0=0 → pasif)
+        0x01, 0x00, 0x01, 0x08,
+        // DTC 2: Sürücü kartı okuyucu arızası — status=0x01 → aktif (bit0=1)
+        0x02, 0x00, 0x01, 0x01,
       ]);
     }
     return null;
@@ -250,6 +258,94 @@ class SimulatedConnectionService implements BleConnectionRepository {
       case 0xF994: return [14]; // Prewarning Card1
       case 0xF995: return [14]; // Prewarning Tacho
       case 0xF996: return [30]; // Prewarning Calibration
+
+      // ── Dashboard / Cihaz Bilgisi ──────────────────────────────────────────
+      case 0xF18A: // System Supplier Identifier
+        return _ascii('STONERIDGE-TR', 15);
+      case 0xF194: // SW Number
+        return _ascii('SW-STC-0213', 11);
+      case 0xF196: // Exhaust Reg / Type Approval Number
+        return _ascii('E1*2016/1230*00001', 20);
+
+      // ── Kalibrasyon Parametreleri sekmesi — Sistem ve Lastik grupları ──────
+      case 0xF19D: // ECU Install Date — 3 byte BCD (2020-03-15)
+        return [0x20, 0x03, 0x15];
+      case 0xF90C: // Reset Heartbeat — 0x00=Disabled, 0x01=Enabled
+        return [0x01];
+      case 0xF90D: // UTC Minute Offset byte (UTC+3 ile eşleşir, bkz. 0xF90B)
+        return [0x7D];
+      case 0xF90E: // UTC Hour Offset byte (UTC+3 ile eşleşir, bkz. 0xF90B)
+        return [0x8C];
+      case 0xF90F: // TCO1 Priority — 0x00=Highest
+        return [0x00];
+      case 0xF913: // Trip Distance — 4 byte BE (1 520 km)
+        return _u32(1520);
+      case 0xF91A: // Teeth Count
+        return [60];
+      case 0xF91E: // PPROOS — 2 byte BE
+        return _u16(4000);
+      case 0xF920: // TCO1 Repetition Rate — 0x00=20ms
+        return [0x00];
+
+      // ── Opsiyonel Ayarlar (0xFDxx) — STC8250 aralığı (FD00–FD19) ───────────
+      // Simüle edilen hwNumber "STC8250-02" olduğundan Opsiyonel Ayarlar
+      // ekranı isStc8255=false modunda okur; bu blok o yolu besler. FD10–FD19
+      // aralığı STC8255 varyantında farklı alanlara denk gelir (bkz.
+      // kline_records.dart) ama uygulama o RID'leri yalnızca isStc8255=true
+      // iken sorguladığından burada çakışma oluşmaz.
+      case 0xFD00: return _u16(8000); // Speedometer Factor
+      case 0xFD01: return [0x01]; // B7 Recognize
+      case 0xFD02: return [200, 180, 150, 200, 200]; // Card Expiry Dates
+      case 0xFD03: return _u16(1); // CAN C On/Off (2 byte)
+      case 0xFD04: return [0x00]; // Military Dimmer
+      case 0xFD05: return [0xFF, 0x32 | 0x80]; // CAN C TCO1
+      case 0xFD06: return [5]; // Overspeed Prewarning Time (s)
+      case 0xFD07: return [0x01, 0x00, 0x01, 0x00]; // Ignition Options — Sürücü
+      case 0xFD08: return [1, 5]; // CAN A Baudrate — 250 kbps
+      case 0xFD09: return [2, 5]; // CAN C Baudrate — 500 kbps
+      case 0xFD0A: return [5, 0x01]; // Backlight & Battery — 24V
+      case 0xFD0B: return [0x01]; // Distance Unit — km
+      case 0xFD0C: return [0x02]; // Language Change — Karttan
+      case 0xFD0D: return [2]; // Overspeed Output — Buzzer
+      case 0xFD0E: return [0x01]; // Buzzer Overspeed Control
+      case 0xFD0F: return [0x01]; // IMS Source — CAN A
+      case 0xFD10: return [0x01]; // Overspeed TCO1
+      case 0xFD11: return [0x01]; // Tripmeter Reset
+      case 0xFD12: return [0x01]; // Output Shaft Speed Enable
+      case 0xFD13: return [1]; // TCO1 Handling Info — Kart
+      case 0xFD14: return [5]; // CAN A Sample Point
+      case 0xFD15: return [2]; // CAN A Sync Jump
+      case 0xFD16: return [5]; // CAN C Sample Point
+      case 0xFD17: return [2]; // CAN C Sync Jump
+      case 0xFD18: return [0x00]; // IMS CAN PGN — 65215
+      case 0xFD19: return _u16(1); // CAN A On/Off (2 byte)
+
+      // ── Opsiyonel Ayarlar — STC8255'e özgü aralık (FD1A ve üzeri) ──────────
+      case 0xFD1A: return [5]; // Overspeed Prewarning Time
+      case 0xFD1B: return [2]; // Overspeed Output — Buzzer
+      case 0xFD1C: return [0x01]; // B7 Recognize
+      case 0xFD1D: return [0x01, 0x00]; // D1/D2 State Enable
+      case 0xFD1E: return [0x01]; // Distance Unit — km
+      case 0xFD1F: return [0x01]; // Buzzer Overspeed Control
+      case 0xFD22: return [200, 180, 150, 200, 200]; // Card Expiry Dates
+      case 0xFD23: return [1]; // Engine Speed Source — CAN-A
+      case 0xFD30: return [1, 2]; // CAN Protocols P1/P2
+      case 0xFD31: return [0x01]; // CAN A On/Off
+      case 0xFD32: return [1, 5]; // CAN A Baudrate — 250 kbps
+      case 0xFD33: return [2]; // CAN A Sync Jump
+      case 0xFD34: return [0x01]; // CAN C On/Off
+      case 0xFD35: return [2, 5]; // CAN C Baudrate — 500 kbps
+      case 0xFD36: return [2]; // CAN C Sync Jump
+      case 0xFD3A: return [0x01]; // Overspeed TCO1
+      case 0xFD3B: return [0x01]; // Tripmeter Reset
+      case 0xFD3C: return [1]; // TCO1 Handling Info — Kart
+      case 0xFD3D: return [0x01, 0x01]; // CAN A/C Termination
+      case 0xFD3E: return [0x00]; // RDDW in Sleep
+      case 0xFD41: return [0x01]; // Periodic DAGS
+      case 0xFD50: return [0x01]; // DAGS Buzzer Control
+      case 0xFD51: return [0x01]; // Card Existence Warning
+      case 0xFD53: return [0x00]; // GNSS Antenna — İç
+
       default:
         return null;
     }

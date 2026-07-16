@@ -36,11 +36,31 @@ class ClassicBluetoothConnectionService implements repo.BleConnectionRepository 
     _stateController.add(repo.BleConnectionState.connecting);
 
     try {
-      _connection = await _bt.connect(
-        address: deviceId,
-        uuid: BtcUuid.spp,
-        timeout: const Duration(seconds: 10),
-      );
+      // Önce secure (authenticated/encrypted) RFCOMM denenir. Android'in
+      // createRfcommSocketToServiceRecord() çağrısı, karşı cihaz SSP eşleşmesini
+      // düzgün desteklemiyorsa (birçok jenerik BT-seri köprü modülü/HC-05,06
+      // klonu gibi) "read failed, socket might closed or timeout" IOException'ı
+      // fırlatır — bu BtcConnectionException olarak geliyor. Bu durumda
+      // insecure soket ile tekrar denenir; gerçek zaman aşımlarında
+      // (BtcTimeoutException, cihaz menzil dışı/kapalı) fallback yapılmaz.
+      try {
+        _connection = await _bt.connect(
+          address: deviceId,
+          uuid: BtcUuid.spp,
+          timeout: const Duration(seconds: 10),
+        );
+      } on BtcConnectionException {
+        _log(
+          'Secure RFCOMM failed, retrying as insecure...',
+          LogLevel.info,
+        );
+        _connection = await _bt.connect(
+          address: deviceId,
+          uuid: BtcUuid.spp,
+          timeout: const Duration(seconds: 10),
+          secure: false,
+        );
+      }
 
       _connStateSub = _connection!.stateStream.listen((s) {
         _stateController.add(_mapState(s));
@@ -118,7 +138,7 @@ class ClassicBluetoothConnectionService implements repo.BleConnectionRepository 
     _ensureConnected();
     try {
       await _connection!.output.writeBytes(data);
-      _log('→ Sent [SPP]: ${bytesToHex(data)}', LogLevel.outgoing);
+      _log('→ Sent [SPP]: ${bytesToHexRedacted(data)}', LogLevel.outgoing);
     } catch (e) {
       throw BleCharacteristicException(
           message: 'SPP write failed.', cause: e);

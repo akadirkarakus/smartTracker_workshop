@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../../bluetooth/models/log_entry.dart';
 import '../../../core/app_logger.dart';
+import '../../../core/app_theme.dart';
 import '../../../kline/kline_service.dart';
 import '../../../models/calibration_data.dart';
+import '../extended_hardware_test_screen.dart';
+import '../hardware_test_reports_screen.dart';
+import '../hardware_test_run_screen.dart';
 import '../optional_settings_screen.dart';
 import '../../test_log_screen.dart';
 
@@ -13,6 +18,8 @@ class ServiceSettingsTab extends StatefulWidget {
   final String? serialNumber;
   final String? hwVersion;
   final KLineService? klineService;
+  final bool isPinAuthenticated;
+  final void Function(bool)? onAuthChanged;
 
   const ServiceSettingsTab({
     super.key,
@@ -23,6 +30,8 @@ class ServiceSettingsTab extends StatefulWidget {
     this.serialNumber,
     this.hwVersion,
     this.klineService,
+    this.isPinAuthenticated = false,
+    this.onAuthChanged,
   });
 
   @override
@@ -32,12 +41,14 @@ class ServiceSettingsTab extends StatefulWidget {
 class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
   late final OptionalSettings _optionalSettings;
   late final TextEditingController _workshopCtrl;
+  late bool _pinBypass;
 
   @override
   void initState() {
     super.initState();
     _optionalSettings = OptionalSettings();
     _workshopCtrl = TextEditingController(text: widget.settings.workshopName);
+    _pinBypass = widget.isPinAuthenticated;
   }
 
   @override
@@ -49,6 +60,50 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
   void _changed() {
     widget.settings.workshopName = _workshopCtrl.text;
     widget.onSettingsChanged();
+  }
+
+  // Bu sayfa Navigator.push ile ayrı bir route olarak açıldığından, üst widget'taki
+  // isPinAuthenticated değişimi bu route'u otomatik yeniden derlemez (bkz. calibration_screen'de
+  // rota kapanıp yeniden açılınca güncellenme davranışı). Bu yüzden anlık UI geri bildirimi için
+  // ayrıca yerel bir kopya tutulur; kaynak veri her zaman üst widget'tadır.
+  void _setAuthenticated(bool v) {
+    setState(() => _pinBypass = v);
+    widget.onAuthChanged?.call(v);
+  }
+
+  // optional_settings_screen.dart ile aynı STC8250/8255 tespiti (hwNumber string eşleşmesi).
+  bool get _isStc8255 => widget.deviceModel?.toUpperCase().contains('8255') ?? false;
+
+  void _openHardwareTest() {
+    if (widget.klineService == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HardwareTestRunScreen(
+          klineService: widget.klineService!,
+          isPinAuthenticated: _pinBypass,
+          isStc8255: _isStc8255,
+          onAuthChanged: _setAuthenticated,
+        ),
+      ),
+    );
+  }
+
+  void _openHardwareTestReports() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const HardwareTestReportsScreen()),
+    );
+  }
+
+  void _openExtendedTest() {
+    if (widget.klineService == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExtendedHardwareTestScreen(klineService: widget.klineService!),
+      ),
+    );
   }
 
   @override
@@ -81,13 +136,13 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Row(
                           children: [
-                            const Icon(Icons.language_outlined, color: CalColors.onSurfaceVariant, size: 20),
+                            Icon(Icons.language_outlined, color: CalColors.onSurfaceVariant, size: 20),
                             const SizedBox(width: 10),
-                            const Expanded(child: Text('Dil', style: TextStyle(fontSize: 14, color: CalColors.onSurface))),
+                            Expanded(child: Text('Dil', style: TextStyle(fontSize: 14, color: CalColors.onSurface))),
                             DropdownButton<String>(
                               value: s.language,
                               underline: const SizedBox(),
-                              style: const TextStyle(fontSize: 14, color: CalColors.primary, fontWeight: FontWeight.w500),
+                              style: TextStyle(fontSize: 14, color: CalColors.primary, fontWeight: FontWeight.w500),
                               items: ['Türkçe', 'English', 'Español', 'Українська']
                                   .map((l) => DropdownMenuItem(value: l, child: Text(l)))
                                   .toList(),
@@ -97,7 +152,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                         ),
                       ),
 
-                      const Divider(height: 1, color: CalColors.outlineVariant),
+                      Divider(height: 1, color: CalColors.outlineVariant),
 
                       // Dark theme
                       Padding(
@@ -110,7 +165,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                               size: 20,
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -121,7 +176,11 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                             ),
                             Switch(
                               value: s.darkThemeEnabled,
-                              onChanged: (v) => setState(() { s.darkThemeEnabled = v; _changed(); }),
+                              onChanged: (v) => setState(() {
+                                s.darkThemeEnabled = v;
+                                AppTheme.instance.setDark(v);
+                                _changed();
+                              }),
                               activeThumbColor: CalColors.primary,
                               activeTrackColor: CalColors.primary.withValues(alpha: 0.4),
                             ),
@@ -136,7 +195,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                 // ── 2. Geliştirici / Test ─────────────────
                 Row(
                   children: [
-                    const _SectionLabel(title: 'Geliştirici / Test'),
+                    const Flexible(child: _SectionLabel(title: 'Geliştirici / Test')),
                     if (s.testModeEnabled) ...[
                       const SizedBox(width: 8),
                       Container(
@@ -174,7 +233,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                               size: 20,
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -197,7 +256,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                         ),
                       ),
 
-                      const Divider(height: 1, color: CalColors.outlineVariant),
+                      Divider(height: 1, color: CalColors.outlineVariant),
 
                       // Log viewer tile
                       Material(
@@ -212,9 +271,9 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                             child: Row(
                               children: [
-                                const Icon(Icons.receipt_long_outlined, color: CalColors.primary, size: 20),
+                                Icon(Icons.receipt_long_outlined, color: CalColors.primary, size: 20),
                                 const SizedBox(width: 10),
-                                const Expanded(
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -225,12 +284,162 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                                 ),
                                 const _LogEntryCountBadge(),
                                 const SizedBox(width: 6),
-                                const Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
+                                Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
                               ],
                             ),
                           ),
                         ),
                       ),
+
+                      Divider(height: 1, color: CalColors.outlineVariant),
+
+                      // Donanım Testi Yap
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: widget.klineService != null ? _openHardwareTest : null,
+                          child: Opacity(
+                            opacity: widget.klineService != null ? 1 : 0.4,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.fact_check_outlined, color: CalColors.primary, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Donanım Testi Yap', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                                        Text('Tüm parametreleri ve iletişim akışlarını otomatik test et', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      Divider(height: 1, color: CalColors.outlineVariant),
+
+                      // Test Raporlarını Görüntüle
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _openHardwareTestReports,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            child: Row(
+                              children: [
+                                Icon(Icons.summarize_outlined, color: CalColors.primary, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Test Raporlarını Görüntüle', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                                      Text('Geçmiş donanım testi sonuçlarını incele', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      Divider(height: 1, color: CalColors.outlineVariant),
+
+                      // Genişletilmiş Test (uzun süren testler — bilinçli olarak ayrı)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: widget.klineService != null ? _openExtendedTest : null,
+                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                          child: Opacity(
+                            opacity: widget.klineService != null ? 1 : 0.4,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.hourglass_bottom, color: Color(0xFFF59E0B), size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Genişletilmiş Test (Saat / Hız-Km)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                                        Text('Dakikalar sürer — ayrı olarak çalıştırılır', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      if (s.testModeEnabled) ...[
+                        Divider(height: 1, color: CalColors.outlineVariant),
+
+                        // PIN bypass (test only)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _pinBypass ? Icons.lock_open_outlined : Icons.lock_outlined,
+                                color: const Color(0xFFF59E0B),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('PIN Doğrulamasını Atla', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                                    Text(
+                                      _pinBypass
+                                          ? 'Açık — atölye oturumu PIN girilmeden aktif'
+                                          : 'Kapalı — PIN girmeden atölye oturumunu aç (yalnızca test ortamı)',
+                                      style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _pinBypass,
+                                onChanged: (v) {
+                                  _setAuthenticated(v);
+                                  AppLogger.instance.log(
+                                    v
+                                        ? 'PIN authentication bypassed via test mode'
+                                        : 'PIN authentication bypass revoked via test mode',
+                                    level: v ? LogLevel.error : LogLevel.info,
+                                    category: LogCategory.pinAuth,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(v
+                                          ? 'PIN doğrulaması atlandı (test modu).'
+                                          : 'PIN doğrulaması bypass kapatıldı.'),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
+                                activeThumbColor: const Color(0xFFF59E0B),
+                                activeTrackColor: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -249,7 +458,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Yetkili Servis Adı', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                      Text('Yetkili Servis Adı', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
                       const SizedBox(height: 6),
                       TextField(
                         controller: _workshopCtrl,
@@ -259,14 +468,14 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: CalColors.primary, width: 2),
+                            borderSide: BorderSide(color: CalColors.primary, width: 2),
                           ),
-                          suffixIcon: const Icon(Icons.edit, size: 18, color: CalColors.outline),
+                          suffixIcon: Icon(Icons.edit, size: 18, color: CalColors.outline),
                         ),
-                        style: const TextStyle(fontSize: 14, color: CalColors.onSurface),
+                        style: TextStyle(fontSize: 14, color: CalColors.onSurface),
                       ),
                       const SizedBox(height: 6),
-                      const Text('Bu isim tüm kalibrasyon sertifikalarında ve raporlarında görünecektir.', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, height: 1.4)),
+                      Text('Bu isim tüm kalibrasyon sertifikalarında ve raporlarında görünecektir.', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, height: 1.4)),
                     ],
                   ),
                 ),
@@ -289,7 +498,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
                                 Icon(Icons.sensors_outlined, color: CalColors.onSurfaceVariant, size: 20),
                                 SizedBox(width: 10),
@@ -324,7 +533,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                         ),
                       ),
 
-                      const Divider(height: 1, color: CalColors.outlineVariant),
+                      Divider(height: 1, color: CalColors.outlineVariant),
 
                       // Optional settings shortcut
                       Material(
@@ -338,6 +547,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                                 onChanged: widget.onSettingsChanged,
                                 klineService: widget.klineService,
                                 deviceHwNumber: widget.deviceModel,
+                                isPinAuthenticated: _pinBypass,
                               ),
                             ),
                           ),
@@ -346,9 +556,9 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                             child: Row(
                               children: [
-                                const Icon(Icons.tune, color: CalColors.primary, size: 20),
+                                Icon(Icons.tune, color: CalColors.primary, size: 20),
                                 const SizedBox(width: 10),
-                                const Expanded(
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -357,7 +567,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                                     ],
                                   ),
                                 ),
-                                const Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
+                                Icon(Icons.arrow_forward_ios, size: 14, color: CalColors.outline),
                               ],
                             ),
                           ),
@@ -380,11 +590,11 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                   child: Column(
                     children: [
                       _InfoRow('Model', widget.deviceModel ?? '—'),
-                      const Divider(height: 1, color: CalColors.outlineVariant),
+                      Divider(height: 1, color: CalColors.outlineVariant),
                       _InfoRow('Firmware Sürümü', widget.firmwareVersion ?? '—'),
-                      const Divider(height: 1, color: CalColors.outlineVariant),
+                      Divider(height: 1, color: CalColors.outlineVariant),
                       _InfoRow('Seri Numarası', widget.serialNumber ?? '—'),
-                      const Divider(height: 1, color: CalColors.outlineVariant),
+                      Divider(height: 1, color: CalColors.outlineVariant),
                       _InfoRow('Donanım Versiyonu', widget.hwVersion ?? '—'),
                     ],
                   ),
@@ -424,7 +634,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                     onPressed: () => showDialog<void>(
                       context: context,
                       builder: (_) => AlertDialog(
-                        title: const Text('Çıkış Yap', style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.error)),
+                        title: Text('Çıkış Yap', style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.error)),
                         content: const Text('Rol seçim ekranına dönmek istiyor musunuz?'),
                         actions: [
                           TextButton(
@@ -444,7 +654,7 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: CalColors.error,
-                      side: const BorderSide(color: CalColors.error),
+                      side: BorderSide(color: CalColors.error),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     icon: const Icon(Icons.logout, size: 20),
@@ -496,7 +706,7 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title.toUpperCase(),
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CalColors.outline, letterSpacing: 0.8),
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: CalColors.outline, letterSpacing: 0.8),
     );
   }
 }
@@ -513,9 +723,9 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 14, color: CalColors.onSurfaceVariant))),
+          Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: CalColors.onSurfaceVariant))),
           const SizedBox(width: 8),
-          Flexible(child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface, fontFeatures: [FontFeature.tabularFigures()]))),
+          Flexible(child: Text(value, textAlign: TextAlign.end, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface, fontFeatures: [FontFeature.tabularFigures()]))),
         ],
       ),
     );

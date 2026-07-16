@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import '../bluetooth/models/log_entry.dart';
 import '../bluetooth/repositories/ble_connection_repository.dart';
 import '../core/app_logger.dart';
 import '../core/exceptions/ble_exception.dart';
+import '../models/calibration_data.dart';
 
 class BleTerminalScreen extends StatefulWidget {
   const BleTerminalScreen({
@@ -44,15 +46,6 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
     super.initState();
     _stateSub = widget.repository.connectionState.listen((s) {
       if (mounted) setState(() => _connState = s);
-      if (s == BleConnectionState.connected && !_connectedCallbackFired) {
-        _connectedCallbackFired = true;
-        if (widget.onConnected != null) {
-          _repositoryAdopted = true;
-          _closeTimer = Timer(const Duration(seconds: 2), () {
-            if (mounted) widget.onConnected!.call(widget.device, widget.repository);
-          });
-        }
-      }
     });
     _logSub = widget.repository.logs.listen((entry) {
       if (mounted) {
@@ -79,10 +72,13 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
     try {
       await widget.repository.connect(widget.device.deviceId);
       await widget.repository.discoverServices();
-      // Notify karakteristiği varsa otomatik aktif et
-      await widget.repository
-          .setNotify(_kNotifyChar, enable: true)
-          .catchError((_) {});
+      // Notify karakteristiğini aktif et — 'SPP_DATA', KLineService'in de
+      // kullandığı transporttan bağımsız kanal adıdır (BLE'de discoverServices()
+      // sırasında gerçek UUID'ye eşlenir, bkz. ble_connection_service.dart).
+      // Hata varsa yutmadan görünür kılınır, aksi halde KLineService sonradan
+      // çok daha kafa karıştırıcı bir "Notify not active" hatasıyla karşılaşır.
+      await widget.repository.setNotify('SPP_DATA', enable: true);
+      _scheduleHandoff();
     } on BleException catch (e) {
       if (mounted) {
         setState(() => _logs.add(
@@ -100,8 +96,71 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
     }
   }
 
+  // KLineService'e devretmeden önce setNotify'ın gerçekten tamamlanmış olması
+  // gerekir — önceden bu, ham GATT 'connected' durumuna bağlı sabit bir 2 sn
+  // zamanlayıcıyla tetikleniyordu ve discoverServices()+setNotify() 2 sn'den
+  // uzun sürerse KLineService, notify kanalı hazır olmadan inşa edilip
+  // notifyStream('SPP_DATA') içinde yakalanmamış bir exception fırlatıyordu.
+  void _scheduleHandoff() {
+    if (_connectedCallbackFired || widget.onConnected == null) return;
+    _connectedCallbackFired = true;
+    _repositoryAdopted = true;
+    _closeTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) widget.onConnected!.call(widget.device, widget.repository);
+    });
+  }
+
   Future<void> _disconnect() async {
     await widget.repository.disconnect();
+  }
+
+  void _copyAll() {
+    final buf = StringBuffer();
+    buf.writeln('=== ${widget.device.displayName} — BLE Terminal Log ===');
+    buf.writeln('Date: ${DateTime.now()}');
+    buf.writeln('Total entries: ${_logs.length}');
+    buf.writeln('');
+    for (final e in _logs) {
+      final ts = e.timestamp;
+      final time =
+          '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}:${ts.second.toString().padLeft(2, '0')}';
+      buf.writeln('[$time] [${e.prefix}] ${e.message}');
+    }
+    Clipboard.setData(ClipboardData(text: buf.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Günlük panoya kopyalandı'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // Bağlanılan cihazın gerçekten takograf adaptörü olup olmadığını anlamak
+  // için Device Information servisindeki (180A) standart, şifrelenmemiş
+  // Read karakteristiklerini okur: 2A29 (Üretici Adı), 2A24 (Model Numarası).
+  Future<void> _readDeviceInfo() async {
+    for (final (uuid, label) in [
+      ('2A29', 'Üretici'),
+      ('2A24', 'Model'),
+    ]) {
+      try {
+        final bytes = await widget.repository.readCharacteristic(uuid);
+        final text = utf8.decode(bytes, allowMalformed: true).trim();
+        if (mounted) {
+          setState(() => _logs.add(LogEntry(
+                message: '$label: ${text.isEmpty ? "(boş)" : text}',
+                level: LogLevel.success,
+              )));
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _logs.add(LogEntry(
+                message: '$label okunamadı ($uuid): $e',
+                level: LogLevel.error,
+              )));
+        }
+      }
+    }
   }
 
   Future<void> _send() async {
@@ -129,7 +188,7 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
 
     _inputController.clear();
     try {
-      await widget.repository.writeCharacteristic(_kWriteChar, bytes);
+      await widget.repository.writeCharacteristic('SPP_DATA', bytes);
     } on BleException catch (e) {
       if (mounted) {
         setState(() =>
@@ -155,9 +214,9 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
     final isConnected = _connState == BleConnectionState.connected;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F4F8),
+      backgroundColor: CalColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A5F7A),
+        backgroundColor: CalColors.primaryContainer,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -176,13 +235,23 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline, color: Colors.white),
+            tooltip: 'Cihaz bilgisi oku (Üretici/Model)',
+            onPressed: isConnected ? _readDeviceInfo : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy_all, color: Colors.white),
+            tooltip: 'Panoya kopyala',
+            onPressed: _logs.isEmpty ? null : _copyAll,
+          ),
           if (isConnected)
             TextButton.icon(
               onPressed: _disconnect,
-              icon: const Icon(Icons.bluetooth_disabled,
-                  color: Color(0xFFDC2626), size: 18),
-              label: const Text('Kes',
-                  style: TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+              icon: Icon(Icons.bluetooth_disabled,
+                  color: CalColors.error, size: 18),
+              label: Text('Kes',
+                  style: TextStyle(color: CalColors.error, fontSize: 13)),
             ),
         ],
       ),
@@ -211,9 +280,9 @@ class _ConnectionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (state) {
       BleConnectionState.connecting => ('Bağlanıyor...', const Color(0xFFD97706)),
-      BleConnectionState.connected => ('Bağlandı', const Color(0xFF16A34A)),
-      BleConnectionState.disconnecting => ('Kesiliyor...', const Color(0xFF6B7280)),
-      BleConnectionState.disconnected => ('Bağlantı Kesildi', const Color(0xFFDC2626)),
+      BleConnectionState.connected => ('Bağlandı', CalColors.accent),
+      BleConnectionState.disconnecting => ('Kesiliyor...', CalColors.outline),
+      BleConnectionState.disconnected => ('Bağlantı Kesildi', CalColors.error),
     };
 
     return Row(
@@ -243,9 +312,9 @@ class _LogView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (logs.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('Bağlantı bekleniyor...',
-            style: TextStyle(color: Color(0xFF4A7A8A))),
+            style: TextStyle(color: CalColors.onSurfaceVariant)),
       );
     }
 
@@ -253,9 +322,9 @@ class _LogView extends StatelessWidget {
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4FBFD),
+        color: CalColors.surfaceLowest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFC4DDE6)),
+        border: Border.all(color: CalColors.outlineVariant),
       ),
       child: ListView.builder(
         controller: controller,
@@ -274,9 +343,9 @@ class _LogLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = switch (entry.level) {
       LogLevel.info => const Color(0xFF5B8EA6),
-      LogLevel.success => const Color(0xFF16A34A),
-      LogLevel.error => const Color(0xFFDC2626),
-      LogLevel.outgoing => const Color(0xFF1A5F7A),
+      LogLevel.success => CalColors.accent,
+      LogLevel.error => CalColors.error,
+      LogLevel.outgoing => CalColors.primaryContainer,
       LogLevel.incoming => const Color(0xFFD97706),
     };
 
@@ -293,7 +362,7 @@ class _LogLine extends StatelessWidget {
           children: [
             TextSpan(
                 text: '[$time] ',
-                style: const TextStyle(color: Color(0xFF4A7A8A))),
+                style: TextStyle(color: CalColors.onSurfaceVariant)),
             TextSpan(
                 text: '[${entry.prefix}] ',
                 style: TextStyle(color: color, fontWeight: FontWeight.bold)),
@@ -323,9 +392,9 @@ class _InputPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFC4DDE6))),
+      decoration: BoxDecoration(
+        color: CalColors.surfaceLowest,
+        border: Border(top: BorderSide(color: CalColors.outlineVariant)),
       ),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
       child: Column(
@@ -333,9 +402,9 @@ class _InputPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text('Gönder →',
+              Text('Gönder →',
                   style: TextStyle(
-                      color: Color(0xFF4A7A8A),
+                      color: CalColors.onSurfaceVariant,
                       fontSize: 11,
                       fontWeight: FontWeight.w600)),
               const Spacer(),
@@ -347,11 +416,11 @@ class _InputPanel extends StatelessWidget {
                 selected: {hexMode},
                 onSelectionChanged: (_) => onToggleMode(),
                 style: SegmentedButton.styleFrom(
-                  backgroundColor: const Color(0xFFD8EDF3),
-                  selectedBackgroundColor: const Color(0xFFE1F2F7),
-                  foregroundColor: const Color(0xFF4A7A8A),
-                  selectedForegroundColor: const Color(0xFF1A5F7A),
-                  side: const BorderSide(color: Color(0xFFC4DDE6)),
+                  backgroundColor: CalColors.surfaceLow,
+                  selectedBackgroundColor: CalColors.surfaceContainer,
+                  foregroundColor: CalColors.onSurfaceVariant,
+                  selectedForegroundColor: CalColors.primaryContainer,
+                  side: BorderSide(color: CalColors.outlineVariant),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                   textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
@@ -371,21 +440,21 @@ class _InputPanel extends StatelessWidget {
                     hintText: hexMode
                         ? '48 65 6C 6C 6F (hex)'
                         : 'Mesaj yaz... (ASCII)',
-                    hintStyle: const TextStyle(
-                        color: Color(0xFF4A7A8A), fontSize: 13),
+                    hintStyle: TextStyle(
+                        color: CalColors.onSurfaceVariant, fontSize: 13),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 10),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFC4DDE6)),
+                      borderSide: BorderSide(color: CalColors.outlineVariant),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFFC4DDE6)),
+                      borderSide: BorderSide(color: CalColors.outlineVariant),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF57C5B6)),
+                      borderSide: BorderSide(color: CalColors.accent),
                     ),
                   ),
                   inputFormatters: hexMode
@@ -401,7 +470,7 @@ class _InputPanel extends StatelessWidget {
               ElevatedButton(
                 onPressed: onSend,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A5F7A),
+                  backgroundColor: CalColors.primaryContainer,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 12),
@@ -420,8 +489,3 @@ class _InputPanel extends StatelessWidget {
     );
   }
 }
-
-// ─── Sabit UUID'ler (LightBlue test ortamı) ──────────────────────────────────
-
-const _kWriteChar = '70BA6C69-5584-4CF1-9871-9736640E1F9F';
-const _kNotifyChar = '0069916F-18DE-4BB3-B4D7-1CB5E5B2EA0F';

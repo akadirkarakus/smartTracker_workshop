@@ -15,11 +15,20 @@ class DashboardTab extends StatelessWidget {
   final List<RecentReport> reports;
   final List<CalParam> params;
   final List<DtcCode> dtcCodes;
-  final void Function(String wValue) onWConstantWritten;
+  final Future<bool> Function(String paramId, String value)? onWriteParam;
   final BleDeviceResult? connectedDevice;
   final VoidCallback onConnectDevice;
   final VoidCallback onDisconnectDevice;
   final KLineService? klineService;
+  final String? bleManufacturer;
+  final String? bleModel;
+  final String? deviceHwNumber;
+  final String? deviceHwVersion;
+  final String? deviceSwVersion;
+  final String? deviceSerial;
+  final String? deviceSystemSupplierId;
+  final String? deviceSwNumber;
+  final String? deviceExhaustRegNumber;
 
   const DashboardTab({
     super.key,
@@ -29,11 +38,20 @@ class DashboardTab extends StatelessWidget {
     required this.reports,
     required this.params,
     required this.dtcCodes,
-    required this.onWConstantWritten,
     required this.connectedDevice,
     required this.onConnectDevice,
     required this.onDisconnectDevice,
+    this.onWriteParam,
     this.klineService,
+    this.bleManufacturer,
+    this.bleModel,
+    this.deviceHwNumber,
+    this.deviceHwVersion,
+    this.deviceSwVersion,
+    this.deviceSerial,
+    this.deviceSystemSupplierId,
+    this.deviceSwNumber,
+    this.deviceExhaustRegNumber,
   });
 
   String? _paramValue(String id) {
@@ -64,9 +82,9 @@ class DashboardTab extends StatelessWidget {
           onSendKey: (pin) async {
             try {
               final result = await klineService!.sendKey(pin);
-              return result.success;
+              return (result.success, result.nrc);
             } catch (_) {
-              return false;
+              return (false, null);
             }
           },
           onCancel: () {
@@ -93,10 +111,13 @@ class DashboardTab extends StatelessWidget {
   }
 
   void _openWMeasure(BuildContext context) {
+    if (onWriteParam == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WConstantMeasurementScreen(onWriteResult: onWConstantWritten),
+        builder: (_) => WConstantMeasurementScreen(
+          onWriteResult: (v) => onWriteParam!('w_constant', v),
+        ),
       ),
     );
   }
@@ -124,6 +145,18 @@ class DashboardTab extends StatelessWidget {
                 // PIN status card (only when connected)
                 if (isConnected) ...[
                   _DeviceStatusCard(isAuthenticated: isPinAuthenticated, onPinTap: () => _openPin(context)),
+                  const SizedBox(height: 12),
+                  _DeviceInfoCard(
+                    bleManufacturer: bleManufacturer,
+                    bleModel: bleModel,
+                    hwNumber: deviceHwNumber,
+                    hwVersion: deviceHwVersion,
+                    swVersion: deviceSwVersion,
+                    serial: deviceSerial,
+                    systemSupplierId: deviceSystemSupplierId,
+                    swNumber: deviceSwNumber,
+                    exhaustRegNumber: deviceExhaustRegNumber,
+                  ),
                   const SizedBox(height: 20),
                 ] else
                   const SizedBox(height: 8),
@@ -138,7 +171,7 @@ class DashboardTab extends StatelessWidget {
                   firstChild: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Cihaz Durumu', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                      Text('Cihaz Durumu', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
                       const SizedBox(height: 10),
                       _DeviceStatusSummaryCard(
                         vrn: _paramValue('vrn'),
@@ -163,7 +196,7 @@ class DashboardTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 20),
-                      const Text('Uyarılar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                      Text('Uyarılar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
                       const SizedBox(height: 10),
                       _WarningCards(
                         nextCalDate: _paramValue('next_cal_date'),
@@ -186,7 +219,7 @@ class DashboardTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 20),
-                      const Text('Özel İşlemler', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                      Text('Özel İşlemler', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
                       const SizedBox(height: 10),
                       _SpecialOpsRow(
                         onMsPair: () => _openMsPair(context),
@@ -202,11 +235,19 @@ class DashboardTab extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Son Raporlar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                    Expanded(
+                      child: Text(
+                        'Son Raporlar',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
                     TextButton(
                       onPressed: () => onNavigate(3),
                       style: TextButton.styleFrom(foregroundColor: CalColors.primary, padding: EdgeInsets.zero),
                       child: const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text('Tümünü Gör', style: TextStyle(fontSize: 13)),
                           Icon(Icons.chevron_right, size: 16),
@@ -509,7 +550,7 @@ class _DeviceStatusCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Yetkilendirme', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                Text('Yetkilendirme', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
                 const SizedBox(height: 2),
                 Row(
                   children: [
@@ -535,7 +576,7 @@ class _DeviceStatusCard extends StatelessWidget {
             onPressed: onPinTap,
             style: TextButton.styleFrom(
               backgroundColor: isAuthenticated ? CalColors.tertiaryFixed : CalColors.surfaceContainer,
-              foregroundColor: isAuthenticated ? CalColors.tertiary : CalColors.primary,
+              foregroundColor: isAuthenticated ? CalColors.onTertiaryFixed : CalColors.primary,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -545,6 +586,87 @@ class _DeviceStatusCard extends StatelessWidget {
               isAuthenticated ? 'Oturum Açık' : 'PIN Gir',
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// BLE Device Information servisinden okunan üretici/model ile takografın
+// K-Line üzerinden bildirdiği HW/SW/Seri bilgisini gösterir. Alanların hiçbiri
+// okunamadıysa (adaptör bu servisi/karakteristikleri desteklemiyor olabilir)
+// kart hiç render edilmez.
+class _DeviceInfoCard extends StatelessWidget {
+  final String? bleManufacturer;
+  final String? bleModel;
+  final String? hwNumber;
+  final String? hwVersion;
+  final String? swVersion;
+  final String? serial;
+  final String? systemSupplierId;
+  final String? swNumber;
+  final String? exhaustRegNumber;
+
+  const _DeviceInfoCard({
+    this.bleManufacturer,
+    this.bleModel,
+    this.hwNumber,
+    this.hwVersion,
+    this.swVersion,
+    this.serial,
+    this.systemSupplierId,
+    this.swNumber,
+    this.exhaustRegNumber,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <(String, String)>[
+      if (bleManufacturer != null) ('Üretici (BLE)', bleManufacturer!),
+      if (bleModel != null) ('Model (BLE)', bleModel!),
+      if (hwNumber != null) ('HW No', hwNumber!),
+      if (hwVersion != null) ('HW Versiyon', hwVersion!),
+      if (swVersion != null) ('SW Versiyon', swVersion!),
+      if (serial != null) ('Seri No', serial!),
+      if (systemSupplierId != null) ('Tedarikçi Kimliği', systemSupplierId!),
+      if (swNumber != null) ('SW Numarası', swNumber!),
+      if (exhaustRegNumber != null) ('Muayene/Tip Onay No', exhaustRegNumber!),
+    ];
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: CalColors.surfaceLowest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CalColors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Cihaz Bilgisi', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 20,
+            runSpacing: 8,
+            children: rows
+                .map((r) => SizedBox(
+                      width: 150,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(r.$1, style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                          Text(
+                            r.$2,
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ))
+                .toList(),
           ),
         ],
       ),
@@ -608,14 +730,20 @@ class _StatusRow extends StatelessWidget {
               Icon(icon, size: 16, color: CalColors.onSurfaceVariant),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(label, style: const TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant)),
+                child: Text(label, style: TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant)),
               ),
-              Text(
-                value ?? '—',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: value != null ? CalColors.onSurface : CalColors.outline,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  value ?? '—',
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: value != null ? CalColors.onSurface : CalColors.outline,
+                  ),
                 ),
               ),
             ],
@@ -857,7 +985,7 @@ class _ReportCard extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(color: CalColors.surfaceLow, borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.local_shipping_outlined, color: CalColors.onSurfaceVariant, size: 22),
+            child: Icon(Icons.local_shipping_outlined, color: CalColors.onSurfaceVariant, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -867,8 +995,16 @@ class _ReportCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(report.vehicleName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
-                    Text(report.time, style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                    Expanded(
+                      child: Text(
+                        report.vehicleName,
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(report.time, style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -882,11 +1018,11 @@ class _ReportCard extends StatelessWidget {
                       ),
                       child: Text(
                         report.statusLabel,
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: report.isSuccess ? CalColors.tertiary : CalColors.onSecondaryContainer),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: report.isSuccess ? CalColors.onTertiaryFixed : CalColors.onSecondaryContainer),
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text(report.plate, style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                    Text(report.plate, style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
                   ],
                 ),
               ],
@@ -913,7 +1049,7 @@ class _WeeklyThroughput extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Haftalık Kalibrasyon', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.primary)),
+          Text('Haftalık Kalibrasyon', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.primary)),
           const SizedBox(height: 12),
           SizedBox(
             height: 80,
@@ -939,7 +1075,7 @@ class _WeeklyThroughput extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(_days[i], style: const TextStyle(fontSize: 10, color: CalColors.onSurfaceVariant)),
+                        Text(_days[i], style: TextStyle(fontSize: 10, color: CalColors.onSurfaceVariant)),
                       ],
                     ),
                   ),
@@ -948,7 +1084,7 @@ class _WeeklyThroughput extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Center(
+          Center(
             child: Text(
               'Henüz veri yok',
               style: TextStyle(fontSize: 11, color: CalColors.outline),

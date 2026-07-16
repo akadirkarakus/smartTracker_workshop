@@ -1,5 +1,6 @@
 // K-LINE frame oluşturma, checksum hesabı ve yanıt ayrıştırma
-// Protokol: KWP2000 / ISO 14230 — CalibrationMessages.md Frame Format
+// Protokol: KWP2000 / ISO 14230 — Regulation (EU) 2016/799, Annex 1C,
+// Appendix 8 "Calibration Protocol" (CELEX 02016R0799) — Tables 4-6.
 
 import '../bluetooth/models/log_entry.dart';
 import '../core/app_logger.dart';
@@ -7,10 +8,9 @@ import 'kline_records.dart';
 
 // ── Frame sabitleri ────────────────────────────────────────────────────────
 const int _fmtStandard    = 0x80; // Standart format (LEN ayrı byte)
-const int _fmtFastInit    = 0x81; // FastInit format (StartCommunication TX)
-const int _fmtFastResp   = 0xC1; // FastInit format (StartCommunication RX)
+const int _fmtFastInit    = 0x81; // FastInit format (StartCommunication TX — Table 5)
 const int _tAddr          = 0xEE; // Target: Tachograph ECU
-const int _sAddr          = 0xF0; // Source: Calibration device
+const int _sAddr          = 0xF0; // Source: Calibration device ("tt" — Regülasyon herhangi bir tester adresini kabul edileceğini belirtiyor)
 
 // ── Checksum ───────────────────────────────────────────────────────────────
 int _cs(List<int> bytes) => bytes.fold(0, (sum, b) => sum + b) & 0xFF;
@@ -152,8 +152,47 @@ class KLineFrameBuffer {
 
   final List<int> _buf = [];
 
+  // K-LINE fiziksel olarak tek telli (half-duplex) bir hat: gönderdiğimiz her
+  // bayt, STKC referans donanımının da (Kline_Port.c::Send_KLINE_Package_
+  // Receive_Response) her bayttan sonra bilerek okuyup attığı şekilde, aynı
+  // hat üzerinden bize yankı olarak geri dönebilir (köprü adaptörü ham K-LINE
+  // geçişi yapıyorsa). expectEcho() ile işaretlenen frame, gelen baytlarla
+  // eşleştiği sürece _buf'a hiç girmeden sessizce tüketilir; ilk uyuşmazlıkta
+  // eşleştirme bırakılır ve baytlar normal parse/hata akışına döner.
+  List<int>? _pendingEcho;
+  int _echoMatched = 0;
+
+  void expectEcho(List<int> frame) {
+    _pendingEcho = frame;
+    _echoMatched = 0;
+  }
+
   void add(List<int> bytes) {
-    _buf.addAll(bytes);
+    var start = 0;
+    final echo = _pendingEcho;
+    if (echo != null) {
+      while (start < bytes.length && _echoMatched < echo.length) {
+        if (bytes[start] != echo[_echoMatched]) {
+          // Not actually an echo — e.g. a genuine response can legitimately
+          // share a leading byte with the request (both use FMT=0x80). The
+          // bytes tentatively matched so far belong to that real frame, so
+          // put them back ahead of the rest of this chunk instead of
+          // dropping them.
+          _buf.addAll(echo.sublist(0, _echoMatched));
+          _pendingEcho = null;
+          break;
+        }
+        _echoMatched++;
+        start++;
+      }
+      if (_pendingEcho != null && _echoMatched == echo.length) {
+        _pendingEcho = null; // fully matched — genuine echo, discard silently
+      }
+    }
+    if (start >= bytes.length) return;
+
+    final remaining = start == 0 ? bytes : bytes.sublist(start);
+    _buf.addAll(remaining);
     if (_buf.length > _maxBufferSize) {
       final overflow = _buf.length - _maxBufferSize;
       _buf.removeRange(0, overflow);
@@ -165,7 +204,11 @@ class KLineFrameBuffer {
     }
   }
 
-  void clear() => _buf.clear();
+  void clear() {
+    _buf.clear();
+    _pendingEcho = null;
+    _echoMatched = 0;
+  }
 
   // Tamponda tam bir yanıt frame'i varsa ayrıştırır, yoksa null döner.
   // Ayrıştırılan baytlar tampondan çıkarılır.
@@ -174,21 +217,14 @@ class KLineFrameBuffer {
 
     final fmt = _buf[0];
 
-    // Fast-init response: C1 EE F0 <SID> <CS> (5 byte)
-    if (fmt == _fmtFastResp) {
-      if (_buf.length < 5) return null;
-      final frame = _buf.sublist(0, 5);
-      final result = _parseFastInitResponse(frame);
-      if (result == null) {
-        // Checksum tutmadı — muhtemel desync. Tüm frame'i atıp olası
-        // sonraki gerçek yanıtı kaybetmek yerine tek bayt atlayıp
-        // bir sonraki header adayıyla yeniden senkronize olmayı dene.
-        _buf.removeAt(0);
-        return null;
-      }
-      _buf.removeRange(0, 5);
-      return result;
-    }
+    // StartCommunication'ın yanıtı da dahil olmak üzere TÜM yanıtlar standart
+    // formatta gelir (Regulation (EU) 2016/799, Annex 1C App.8, Table 6:
+    // StartCommunication Positive Response = 80 <tt> EE 03 C1 <KB1> <KB2> <CS>,
+    // yani 8 baytlık normal bir standart frame — ayrı bir "fast-init yanıt"
+    // formatı yok). Önceki kod burada olmayan özel bir "C1 EE F0 SID CS" (5
+    // bayt) formatı varsayıyordu; bu hem regülasyonla hem STKC referans
+    // firmware'iyle (Kline_Port.c::Send_KLINE_Package_Receive_Response, her
+    // yanıtı tek tip 0x80 formatında bekliyor) çelişiyordu.
 
     // Standard response: 80 F0 EE LEN SID [DATA...] CS
     if (fmt == _fmtStandard) {
@@ -218,22 +254,6 @@ class KLineFrameBuffer {
     );
     _buf.removeAt(0);
     return null;
-  }
-
-  KLineResponse? _parseFastInitResponse(List<int> frame) {
-    // C1 F0 EE <SID> <CS>
-    final expectedCs = _cs(frame.sublist(0, 4));
-    if (frame[4] != expectedCs) {
-      AppLogger.instance.log(
-        'FastInit checksum error: '
-        'expected 0x${expectedCs.toRadixString(16).padLeft(2, '0').toUpperCase()}, '
-        'received 0x${frame[4].toRadixString(16).padLeft(2, '0').toUpperCase()}',
-        level: LogLevel.error,
-        category: LogCategory.bluetooth,
-      );
-      return null;
-    }
-    return KLineResponse(sid: frame[3], data: const []);
   }
 
   KLineResponse? _parseStandardResponse(List<int> frame) {

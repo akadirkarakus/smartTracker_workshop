@@ -361,6 +361,174 @@ class KLineCodec {
     return bytes[0] != 0x00;
   }
 
+  // Card Expiry Dates (0xFD02 / 0xFD22) — 5 bytes: Control, Driver, Workshop, Company, Calibration (0-250)
+  static List<int> encodeCardExpiryDates(int control, int driver, int workshop, int company, int calibration) => [
+        control.clamp(0, 250),
+        driver.clamp(0, 250),
+        workshop.clamp(0, 250),
+        company.clamp(0, 250),
+        calibration.clamp(0, 250),
+      ];
+
+  static (int, int, int, int, int)? decodeCardExpiryDates(List<int> bytes) {
+    if (bytes.length < 5) return null;
+    return (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
+  }
+
+  // Genel açma/kapama bayrağı (2 bayt BE) — CAN A/C On-Off (0xFD03/0xFD19, STC8250)
+  static List<int> encodeEnabledUint16(bool enabled) => _uint16Be(enabled ? 1 : 0);
+
+  static bool? decodeEnabledUint16(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return _readUint16Be(bytes, 0) != 0;
+  }
+
+  // CAN C TCO1 (0xFD05, yalnızca STC8250) — [0xFF, value | 0x80]
+  static List<int> encodeCanCTco1(int value) => [0xFF, (value.clamp(0, 127)) | 0x80];
+
+  static int? decodeCanCTco1(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return bytes[1] & 0x7F;
+  }
+
+  // Backlight & Battery Option (0xFD0A, yalnızca STC8250) — 2 bytes: Backlight, Battery (0x01=24V, 0x02=12V)
+  static List<int> encodeBacklightBattery(int backlightLevel, String battery) =>
+      [backlightLevel.clamp(0, 255), battery == '12V' ? 0x02 : 0x01];
+
+  static (int, String)? decodeBacklightBattery(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return (bytes[0], bytes[1] == 0x02 ? '12V' : '24V');
+  }
+
+  // Language Change (0xFD0C / 0xFD19-8255) — 1 byte: 0x02=Karttan, 0x03=Kart ve Manuel
+  static List<int> encodeLanguageChange(String value) => [value == 'Kart ve Manuel' ? 0x03 : 0x02];
+
+  static String? decodeLanguageChange(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    return bytes[0] == 0x03 ? 'Kart ve Manuel' : 'Karttan';
+  }
+
+  // Overspeed Prewarning Output (0xFD0D / 0xFD1B) — 1 byte enum
+  static List<int> encodeOverspeedOutput(String value) {
+    const labels = ['Devre Dışı', 'Ekran', 'Buzzer', 'Çıkış', 'Tümü'];
+    final idx = labels.indexOf(value);
+    return [idx == -1 ? 0 : idx];
+  }
+
+  static String? decodeOverspeedOutput(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    const labels = ['Devre Dışı', 'Ekran', 'Buzzer', 'Çıkış', 'Tümü'];
+    if (bytes[0] < 0 || bytes[0] >= labels.length) return null;
+    return labels[bytes[0]];
+  }
+
+  // TCO1 Handling Info (0xFD13 / 0xFD3C) — 1 byte enum
+  static List<int> encodeTco1HandlingInfo(String value) {
+    const labels = ['Yok', 'Kart', 'Kağıt', 'Kart ve Kağıt'];
+    final idx = labels.indexOf(value);
+    return [idx == -1 ? 0 : idx];
+  }
+
+  static String? decodeTco1HandlingInfo(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    const labels = ['Yok', 'Kart', 'Kağıt', 'Kart ve Kağıt'];
+    if (bytes[0] < 0 || bytes[0] >= labels.length) return null;
+    return labels[bytes[0]];
+  }
+
+  // CAN A/C Sample Point index (0xFD14/0xFD16, yalnızca STC8250) — 1 byte, 0-11 (60-93.75%)
+  static List<int> encodeCanSamplePoint(int idx) => [idx.clamp(0, 11)];
+
+  static int? decodeCanSamplePoint(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    return bytes[0];
+  }
+
+  // Ham tek bayt — CAN A/C Sync Jump (0xFD15/0xFD17/0xFD33/0xFD36), RDDW in Sleep (0xFD3E, format dokümante edilmemiş)
+  static List<int> encodeRawByte(int value) => [value.clamp(0, 255)];
+
+  static int? decodeRawByte(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    return bytes[0];
+  }
+
+  // IMS CAN PGN (0xFD18, yalnızca STC8250) — 1 byte: 0x00=PGN 65215, 0x01=PGN 65256
+  static List<int> encodeImsCanPgn(String value) => [value == 'PGN 65256' ? 0x01 : 0x00];
+
+  static String? decodeImsCanPgn(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    return bytes[0] == 0x01 ? 'PGN 65256' : 'PGN 65215';
+  }
+
+  // N Speed Profiles (0xFD13-8255) — 30 bytes = 15 × uint16 BE
+  static List<int> encodeNSpeedProfiles(List<int> values) {
+    final bytes = <int>[];
+    for (var i = 0; i < 15; i++) {
+      bytes.addAll(_uint16Be(i < values.length ? values[i] : 0));
+    }
+    return bytes;
+  }
+
+  static List<int>? decodeNSpeedProfiles(List<int> bytes) {
+    if (bytes.length < 30) return null;
+    return [for (var i = 0; i < 15; i++) _readUint16Be(bytes, i * 2)];
+  }
+
+  // V Speed Profiles (0xFD15-8255) — 15 × uint8
+  static List<int> encodeVSpeedProfiles(List<int> values) =>
+      [for (var i = 0; i < 15; i++) (i < values.length ? values[i] : 0).clamp(0, 255)];
+
+  static List<int>? decodeVSpeedProfiles(List<int> bytes) {
+    if (bytes.length < 15) return null;
+    return bytes.sublist(0, 15);
+  }
+
+  // N Factor (0xFD16-8255) — 2 bytes BE, 2000-64000
+  static List<int> encodeNFactor(int value) => _uint16Be(value.clamp(2000, 64000));
+
+  static int? decodeNFactor(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return _readUint16Be(bytes, 0);
+  }
+
+  // D1/D2 State Enable (0xFD1D-8255) — 2 bytes: D1 Enable, D2 Enable
+  static List<int> encodeD1D2Enable(bool d1, bool d2) => [d1 ? 0x01 : 0x00, d2 ? 0x01 : 0x00];
+
+  static (bool, bool)? decodeD1D2Enable(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return (bytes[0] != 0x00, bytes[1] != 0x00);
+  }
+
+  // Engine Speed Source (0xFD23-8255) — 1 byte enum
+  static List<int> encodeEngineSpeedSource(String value) {
+    const labels = ['Devre Dışı', 'CAN-A', 'CAN-C', 'C3 Rev'];
+    final idx = labels.indexOf(value);
+    return [idx == -1 ? 0 : idx];
+  }
+
+  static String? decodeEngineSpeedSource(List<int> bytes) {
+    if (bytes.isEmpty) return null;
+    const labels = ['Devre Dışı', 'CAN-A', 'CAN-C', 'C3 Rev'];
+    if (bytes[0] < 0 || bytes[0] >= labels.length) return null;
+    return labels[bytes[0]];
+  }
+
+  // CAN Protocols (0xFD30-8255) — 2 bytes: Protocol P1, Protocol P2 (ham değerler, doküman enum vermiyor)
+  static List<int> encodeCanProtocols(int p1, int p2) => [p1.clamp(0, 255), p2.clamp(0, 255)];
+
+  static (int, int)? decodeCanProtocols(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return (bytes[0], bytes[1]);
+  }
+
+  // CAN Terminations (0xFD3D-8255) — 2 bytes: CAN A Termination Enable, CAN C Termination Enable
+  static List<int> encodeCanTerminations(bool canA, bool canC) => [canA ? 0x01 : 0x00, canC ? 0x01 : 0x00];
+
+  static (bool, bool)? decodeCanTerminations(List<int> bytes) {
+    if (bytes.length < 2) return null;
+    return (bytes[0] != 0x00, bytes[1] != 0x00);
+  }
+
   // ── SecurityAccess seed/key ────────────────────────────────────────────────
   // Seed, yanıt byte'larından ham hex string olarak döner
   static String decodeSeedHex(List<int> bytes) => bytes

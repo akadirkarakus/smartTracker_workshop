@@ -170,6 +170,42 @@ class KLineRoutineIds {
   static const int buzzer               = 0x015A;
 }
 
+// UI test ID'lerini KWP2000 RoutineControl rutin ID'lerine eşler (Flow 12–21).
+// diagnostics_tab.dart (tekil test butonu) ve hardware_test_runner.dart (otomatik
+// sweep) aynı eşlemeyi kullanır ki ikisi birbirinden asla sapmasın.
+const Map<String, int> kComponentTestRoutineMap = {
+  'display': KLineRoutineIds.displayTest,
+  'lcd_neg': KLineRoutineIds.lcdNegativeMode,
+  'printer': KLineRoutineIds.printerTest,
+  'hardware': KLineRoutineIds.hardwareTest,
+  'card_reader': KLineRoutineIds.smartCardReaderTest,
+  'keypad': KLineRoutineIds.buttonTestLoop,
+  'battery': KLineRoutineIds.batteryLevel,
+  'data_memory': KLineRoutineIds.dataMemoryIntegrity,
+  'sw_integrity': KLineRoutineIds.softwareIntegrity,
+  'buzzer_test': KLineRoutineIds.buzzer,
+};
+
+// Cihazın kendi kendine sonuçlandırdığı rutinler (Hardware/Battery/Data Memory/
+// SW Integrity — Flow 15, 18-20). K-Line üzerinden app'e görünür bir pass/fail
+// bildirmezler; stopRoutine yanıtı da doküman düzeyinde hiç gösterilmemiştir,
+// bu yüzden yanıt zaman aşımı (KLineTimeoutException) burada hata sayılmaz.
+const Set<String> kAutoResultTestIds = {'hardware', 'battery', 'data_memory', 'sw_integrity'};
+
+// Operatörün cihaz üzerinde F1/F4 basarak sonucu bildirdiği rutinler
+// (Display/LCD Negatif/Yazıcı/Kart Okuyucu — Flow 12-14, 16).
+const Set<String> kVisualConfirmTestIds = {'display', 'lcd_neg', 'printer', 'card_reader'};
+
+// Gözlemlenebilir bir sonucu olmayan rutinler (tuş basımı/ses algılanamaz);
+// doküman bunlar için stopRoutine dahi göndermez (Flow 17, 21).
+const Set<String> kNoResultTestIds = {'keypad', 'buzzer_test'};
+
+// kAutoResultTestIds ∪ kNoResultTestIds — ikisi de app tarafında doğrulanabilir
+// bir sonuç üretmez. UI bu testlerde "sonucu cihazdan kontrol edin" davranışını
+// uygular ve stopRoutine yanıt zaman aşımını hataya saymaz
+// (bkz. diagnostics_tab.dart:_startTest, hardware_test_runner.dart).
+const Set<String> kDeviceOnlyResultTestIds = {...kAutoResultTestIds, ...kNoResultTestIds};
+
 // ── RoutineControl sub-function seçicileri ─────────────────────────────────
 class KLineRoutineSelect {
   KLineRoutineSelect._();
@@ -210,6 +246,16 @@ class KLineTiming {
 
   static const Duration interMessageDelay = Duration(milliseconds: 60);
   static const Duration wakeupDelay       = Duration(milliseconds: 23);
+
+  // ISO 14230 P4min — bir frame içindeki ardışık baytlar arasında test cihazının
+  // (bizim) bırakması gereken asgari boşluk. STKC referans firmware'i
+  // (Kline_Port.c::Send_KLINE_Package_Receive_Response) her baytı ayrı ayrı
+  // UART_write edip aralarında Task_sleep(5) uyguluyor — bu sabit onu birebir
+  // yansıtır. Tüm frame'i tek seferde yazmak (eski davranış) bu boşluğu garanti
+  // etmiyordu; gerçek donanımda takografın kendi debug çıktısında bağlantı
+  // anında "FMT not correct / TGT check failure / SRC check failure" olarak
+  // görülen header-hizalama hatalarının kök nedeni buydu (bkz. PossibleProblems.md).
+  static const Duration interByteDelay    = Duration(milliseconds: 5);
   static const Duration testerPresentInterval = Duration(milliseconds: 150);
   static const Duration pinResponseTimeout    = Duration(seconds: 5);
   static const Duration sendKeyWait           = Duration(milliseconds: 1000);

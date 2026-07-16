@@ -467,4 +467,110 @@ void main() {
       expect(KLineCodec.decodeAsciiTrimmed([]), isNull);
     });
   });
+
+  group('Sprint 5 — optional parameter helpers', () {
+    test('Card Expiry Dates (0xFD02/0xFD22) round-trips 5 fields', () {
+      final encoded = KLineCodec.encodeCardExpiryDates(10, 20, 30, 40, 250);
+      expect(encoded, [10, 20, 30, 40, 250]);
+      expect(KLineCodec.decodeCardExpiryDates(encoded), (10, 20, 30, 40, 250));
+      expect(KLineCodec.decodeCardExpiryDates([1, 2, 3]), isNull);
+    });
+
+    test('encodeEnabledUint16 / decodeEnabledUint16 round-trips (CAN A/C On-Off, STC8250)', () {
+      expect(KLineCodec.decodeEnabledUint16(KLineCodec.encodeEnabledUint16(true)), true);
+      expect(KLineCodec.decodeEnabledUint16(KLineCodec.encodeEnabledUint16(false)), false);
+      expect(KLineCodec.decodeEnabledUint16([0x01]), isNull);
+    });
+
+    test('CAN C TCO1 (0xFD05) sets the 0x80 flag bit and masks it back off on decode', () {
+      final encoded = KLineCodec.encodeCanCTco1(0x2A);
+      expect(encoded, [0xFF, 0xAA]);
+      expect(KLineCodec.decodeCanCTco1(encoded), 0x2A);
+    });
+
+    test('Backlight & Battery (0xFD0A) round-trips level + battery label', () {
+      expect(
+        KLineCodec.decodeBacklightBattery(KLineCodec.encodeBacklightBattery(200, '24V')),
+        (200, '24V'),
+      );
+      expect(
+        KLineCodec.decodeBacklightBattery(KLineCodec.encodeBacklightBattery(50, '12V')),
+        (50, '12V'),
+      );
+    });
+
+    test('Language Change (0xFD0C/0xFD19-8255) round-trips both options', () {
+      expect(KLineCodec.decodeLanguageChange(KLineCodec.encodeLanguageChange('Karttan')), 'Karttan');
+      expect(KLineCodec.decodeLanguageChange(KLineCodec.encodeLanguageChange('Kart ve Manuel')), 'Kart ve Manuel');
+    });
+
+    test('Overspeed Prewarning Output (0xFD0D/0xFD1B) round-trips all 5 labels', () {
+      for (final label in ['Devre Dışı', 'Ekran', 'Buzzer', 'Çıkış', 'Tümü']) {
+        expect(KLineCodec.decodeOverspeedOutput(KLineCodec.encodeOverspeedOutput(label)), label);
+      }
+    });
+
+    test('TCO1 Handling Info (0xFD13/0xFD3C) round-trips all 4 labels', () {
+      for (final label in ['Yok', 'Kart', 'Kağıt', 'Kart ve Kağıt']) {
+        expect(KLineCodec.decodeTco1HandlingInfo(KLineCodec.encodeTco1HandlingInfo(label)), label);
+      }
+    });
+
+    test('CAN Sample Point (0xFD14/0xFD16) clamps to 0-11', () {
+      expect(KLineCodec.decodeCanSamplePoint(KLineCodec.encodeCanSamplePoint(7)), 7);
+      expect(KLineCodec.encodeCanSamplePoint(99), [11]);
+      expect(KLineCodec.encodeCanSamplePoint(-5), [0]);
+    });
+
+    test('encodeRawByte / decodeRawByte round-trips and clamps to 0-255', () {
+      expect(KLineCodec.decodeRawByte(KLineCodec.encodeRawByte(128)), 128);
+      expect(KLineCodec.encodeRawByte(300), [255]);
+    });
+
+    test('IMS CAN PGN (0xFD18) round-trips both PGN labels', () {
+      expect(KLineCodec.decodeImsCanPgn(KLineCodec.encodeImsCanPgn('PGN 65215')), 'PGN 65215');
+      expect(KLineCodec.decodeImsCanPgn(KLineCodec.encodeImsCanPgn('PGN 65256')), 'PGN 65256');
+    });
+
+    test('N Speed Profiles (0xFD13-8255) round-trips 15 uint16 values', () {
+      final values = List.generate(15, (i) => 1000 + i);
+      final encoded = KLineCodec.encodeNSpeedProfiles(values);
+      expect(encoded.length, 30);
+      expect(KLineCodec.decodeNSpeedProfiles(encoded), values);
+      expect(KLineCodec.decodeNSpeedProfiles([1, 2]), isNull);
+    });
+
+    test('V Speed Profiles (0xFD15-8255) round-trips 15 uint8 values', () {
+      final values = List.generate(15, (i) => i * 10);
+      final encoded = KLineCodec.encodeVSpeedProfiles(values);
+      expect(encoded.length, 15);
+      expect(KLineCodec.decodeVSpeedProfiles(encoded), values);
+    });
+
+    test('N Factor (0xFD16-8255) clamps to 2000-64000', () {
+      expect(KLineCodec.decodeNFactor(KLineCodec.encodeNFactor(30000)), 30000);
+      expect(KLineCodec.decodeNFactor(KLineCodec.encodeNFactor(1)), 2000);
+      expect(KLineCodec.decodeNFactor(KLineCodec.encodeNFactor(999999)), 64000);
+    });
+
+    test('D1/D2 State Enable (0xFD1D-8255) round-trips both booleans independently', () {
+      expect(KLineCodec.decodeD1D2Enable(KLineCodec.encodeD1D2Enable(true, false)), (true, false));
+      expect(KLineCodec.decodeD1D2Enable(KLineCodec.encodeD1D2Enable(false, true)), (false, true));
+    });
+
+    test('Engine Speed Source (0xFD23-8255) round-trips all 4 labels', () {
+      for (final label in ['Devre Dışı', 'CAN-A', 'CAN-C', 'C3 Rev']) {
+        expect(KLineCodec.decodeEngineSpeedSource(KLineCodec.encodeEngineSpeedSource(label)), label);
+      }
+    });
+
+    test('CAN Protocols (0xFD30-8255) round-trips P1/P2 independently', () {
+      expect(KLineCodec.decodeCanProtocols(KLineCodec.encodeCanProtocols(1, 2)), (1, 2));
+    });
+
+    test('CAN Terminations (0xFD3D-8255) round-trips both booleans independently', () {
+      expect(KLineCodec.decodeCanTerminations(KLineCodec.encodeCanTerminations(true, false)), (true, false));
+      expect(KLineCodec.decodeCanTerminations(KLineCodec.encodeCanTerminations(false, true)), (false, true));
+    });
+  });
 }

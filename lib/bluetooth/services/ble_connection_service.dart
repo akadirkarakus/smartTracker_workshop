@@ -143,7 +143,51 @@ class FlutterBluePlusConnectionService implements BleConnectionRepository {
       }
     }
 
+    _resolveSppDataAlias(rawServices);
+
     return services;
+  }
+
+  // KLineService, transporttan bağımsız olarak sabit 'SPP_DATA' kanal adını
+  // kullanır (bkz. CLAUDE.md). Standart BT SIG servisleri (1800/1801/180A/...)
+  // kısa UUID string'i döndürür; K-Line adaptörünün özel servisi her zaman
+  // 128-bit (tire içeren) bir UUID'dir. Bu nedenle standart servisleri eleyip,
+  // yazma+notify destekleyen ilk özel karakteristiği 'SPP_DATA' olarak
+  // eşliyoruz. Birden fazla aday bulunursa hepsi loglanır — adaptör K-Line
+  // wakeup'a yanıt vermezse, ilk adayın yanlış seçilmiş olabileceğini gösterir.
+  void _resolveSppDataAlias(List<BluetoothService> rawServices) {
+    final candidates = <BluetoothCharacteristic>[];
+    for (final s in rawServices) {
+      if (s.serviceUuid.str.length <= 4) continue; // standart BT SIG servisi
+      for (final c in s.characteristics) {
+        final canWrite = c.properties.write || c.properties.writeWithoutResponse;
+        final canNotify = c.properties.notify || c.properties.indicate;
+        if (canWrite && canNotify) candidates.add(c);
+      }
+    }
+
+    if (candidates.isEmpty) {
+      _log(
+        'SPP_DATA alias çözülemedi: yazma+notify destekleyen özel karakteristik bulunamadı.',
+        LogLevel.error,
+      );
+      return;
+    }
+
+    if (candidates.length > 1) {
+      _log(
+        'Birden fazla SPP_DATA adayı bulundu, ilki kullanılıyor. Adaylar: '
+        '${candidates.map((c) => c.characteristicUuid.str.toUpperCase()).join(', ')}',
+        LogLevel.info,
+      );
+    }
+
+    final chosen = candidates.first;
+    _characteristics['SPP_DATA'] = chosen;
+    _log(
+      'SPP_DATA → ${chosen.characteristicUuid.str.toUpperCase()} olarak eşlendi.',
+      LogLevel.success,
+    );
   }
 
   // ─── Okuma / Yazma / Notify ───────────────────────────────────────────────
@@ -168,13 +212,23 @@ class FlutterBluePlusConnectionService implements BleConnectionRepository {
   Future<void> writeCharacteristic(String charUuid, List<int> data) async {
     final c = _findChar(charUuid);
     try {
-      if (c.properties.writeWithoutResponse) {
+      // Teşhis: K-Line'ın bayt-arası zamanlaması (ISO 14230 P4, bkz.
+      // KLineService._write()) yazılım tarafında eklenen sabit gecikmeye
+      // dayanıyor — ama "with response" yazımda her bayt bir BLE ACK
+      // round-trip'i bekliyor, bu da gerçek boşluğu öngörülemez şekilde
+      // artırabilir. Hangi modun kullanıldığını burada logluyoruz ki
+      // PossibleProblems.md #17'deki (her mesajda tekrarlayan FMT/TGT/SRC
+      // check failure) teşhis gerçek donanımda doğrulanabilsin.
+      final usingWithoutResponse = c.properties.writeWithoutResponse;
+      if (usingWithoutResponse) {
         await c.write(data, withoutResponse: true);
       } else {
         await c.write(data);
       }
       _log(
-        '→ Sent [${_shortUuid(charUuid)}]: ${bytesToHex(data)}',
+        '→ Sent [${_shortUuid(charUuid)}] '
+        '(${usingWithoutResponse ? "without response" : "ACK'li (with response)"}): '
+        '${bytesToHexRedacted(data)}',
         LogLevel.outgoing,
       );
     } catch (e) {
@@ -196,7 +250,14 @@ class FlutterBluePlusConnectionService implements BleConnectionRepository {
       if (enable) {
         final ctrl = StreamController<List<int>>.broadcast();
         _notifyControllers[charUuid] = ctrl;
-        _notifySubs[charUuid] = c.lastValueStream.listen((bytes) {
+        // DİKKAT: c.lastValueStream KULLANMA — flutter_blue_plus'ta bu stream
+        // hem gerçek gelen bildirimleri HEM DE bizim write() çağrılarımızın
+        // yankısını (onCharacteristicWritten) yayınlar. K-Line request/response
+        // aynı karakteristik üzerinden aktığı için bu, kendi giden byte'larımızı
+        // gelen yanıt gibi buffer'a sokup her mesajı bozuyordu (bkz.
+        // PossibleProblems.md). onValueReceived sadece read()/gerçek notify
+        // olaylarını yayınlar — write() çağrılarını içermez.
+        _notifySubs[charUuid] = c.onValueReceived.listen((bytes) {
           if (bytes.isNotEmpty) {
             _log(
               '← Notify [${_shortUuid(charUuid)}]: ${bytesToHex(bytes)}',

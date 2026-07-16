@@ -49,6 +49,9 @@ class CalibrationSnapshot {
     this.prewarningCalDays,
     this.downloadPeriodVuDays,
     this.downloadPeriodCardDays,
+    this.systemSupplierIdentifier,
+    this.swNumber,
+    this.exhaustRegOrTypeApprovalNumber,
   });
 
   final String?   vin;
@@ -80,6 +83,9 @@ class CalibrationSnapshot {
   final int?      prewarningCalDays;   // (0xF996)
   final int?      downloadPeriodVuDays;   // (0xF991)
   final int?      downloadPeriodCardDays; // (0xF990)
+  final String?   systemSupplierIdentifier;       // (0xF18A)
+  final String?   swNumber;                       // (0xF194)
+  final String?   exhaustRegOrTypeApprovalNumber; // (0xF196)
 }
 
 class OptionalSettingsSnapshot {
@@ -97,6 +103,44 @@ class OptionalSettingsSnapshot {
     this.gnssAntenna,
     this.periodicDags,
     this.cardExistenceWarning,
+    // Ortak — Sprint 5
+    this.languageChange,
+    this.overspeedOutput,
+    this.buzzerOverspeedControl,
+    this.overspeedTco1,
+    this.tco1HandlingInfo,
+    this.canASyncJump,
+    this.canCSyncJump,
+    this.canAOnOff,
+    this.canCOnOff,
+    this.cardExpiryControl,
+    this.cardExpiryDriver,
+    this.cardExpiryWorkshop,
+    this.cardExpiryCompany,
+    this.cardExpiryCalibration,
+    // STC8250'ye özel — Sprint 5
+    this.canCTco1,
+    this.backlightLevel,
+    this.backlightBattery,
+    this.outputShaftSpeedEnable,
+    this.canASample,
+    this.canCSample,
+    this.imsCanPgn,
+    // STC8255'e özel — Sprint 5
+    this.nProfileRegistry,
+    this.nSpeedProfiles,
+    this.vProfileRegistry,
+    this.vSpeedProfiles,
+    this.nFactor,
+    this.d1Enable,
+    this.d2Enable,
+    this.engineSpeedSource,
+    this.canProtocolP1,
+    this.canProtocolP2,
+    this.canATermination,
+    this.canCTermination,
+    this.rddwInSleep,
+    this.dagsBuzzerControl,
   });
 
   final int?    speedometerFactor;
@@ -112,6 +156,47 @@ class OptionalSettingsSnapshot {
   final String? gnssAntenna;           // yalnızca STC8255
   final bool?   periodicDags;          // yalnızca STC8255
   final bool?   cardExistenceWarning;  // yalnızca STC8255
+
+  // Ortak — Sprint 5
+  final String? languageChange;
+  final String? overspeedOutput;
+  final bool?   buzzerOverspeedControl;
+  final bool?   overspeedTco1;
+  final String? tco1HandlingInfo;
+  final int?    canASyncJump;
+  final int?    canCSyncJump;
+  final bool?   canAOnOff;
+  final bool?   canCOnOff;
+  final int?    cardExpiryControl;
+  final int?    cardExpiryDriver;
+  final int?    cardExpiryWorkshop;
+  final int?    cardExpiryCompany;
+  final int?    cardExpiryCalibration;
+
+  // STC8250'ye özel — Sprint 5
+  final int?    canCTco1;
+  final int?    backlightLevel;
+  final String? backlightBattery;
+  final bool?   outputShaftSpeedEnable;
+  final int?    canASample;
+  final int?    canCSample;
+  final String? imsCanPgn;
+
+  // STC8255'e özel — Sprint 5
+  final bool?      nProfileRegistry;
+  final List<int>? nSpeedProfiles;
+  final bool?      vProfileRegistry;
+  final List<int>? vSpeedProfiles;
+  final int?       nFactor;
+  final bool?      d1Enable;
+  final bool?      d2Enable;
+  final String?    engineSpeedSource;
+  final int?       canProtocolP1;
+  final int?       canProtocolP2;
+  final bool?      canATermination;
+  final bool?      canCTermination;
+  final int?       rddwInSleep;
+  final bool?      dagsBuzzerControl;
 }
 
 class DtcEntry {
@@ -120,7 +205,11 @@ class DtcEntry {
   final int statusMask;
 }
 
-enum MsPairingStatus { waiting, paired, conditionsNotCorrect }
+enum MsPairingStatus { waiting, paired, conditionsNotCorrect, routineNotSupported }
+
+// pollRoutineCompletion() sonucu — Flow 12-21 rutinlerinden cihazın kendi
+// kendine sonuçlandırdığı türler için (Hardware/Battery/Data Memory/SW Integrity).
+enum RoutineCompletionStatus { completed, conditionsNotCorrect, timedOut }
 
 class ClockTestProgress {
   const ClockTestProgress({
@@ -160,6 +249,16 @@ class KLineException implements Exception {
   String toString() => nrc != null
       ? 'KLineException: $message (NRC=0x${nrc!.toRadixString(16).toUpperCase()})'
       : 'KLineException: $message';
+}
+
+// Bağlantı canlıyken hiçbir yanıt gelmeden zaman aşımına uğrandığında fırlatılır
+// (bkz. _waitResponse). Bazı bileşen self-test rutinleri için (Flow 12-21,
+// CalibrationMessages.md) start/stopRoutine yanıtı doküman düzeyinde hiç
+// gösterilmemiştir; çağıran taraf bu durumu genel bir KLineException'dan
+// (negatif NRC veya bağlantı kopması gibi gerçek hatalardan) ayırt edip
+// "beklenen davranış" olarak ele alabilir.
+class KLineTimeoutException extends KLineException {
+  const KLineTimeoutException(super.message);
 }
 
 // ── KLineService ────────────────────────────────────────────────────────────
@@ -317,6 +416,9 @@ class KLineService {
     final pwCalResp    = await _rdbiOrEmpty(KLineRecords.prewarningCal);
     final dlVuResp     = await _rdbiOrEmpty(KLineRecords.downloadPeriodVu);
     final dlCardResp   = await _rdbiOrEmpty(KLineRecords.downloadPeriodCard);
+    final supplierResp = await _rdbiOrEmpty(KLineRecords.systemSupplierIdentifier);
+    final swNumResp    = await _rdbiOrEmpty(KLineRecords.swNumber);
+    final exhaustResp  = await _rdbiOrEmpty(KLineRecords.exhaustRegOrTypeApprovalNumber);
 
     await _endTransaction();
 
@@ -350,6 +452,9 @@ class KLineService {
       prewarningCalDays:      KLineCodec.decodePrewarningDays(pwCalResp),
       downloadPeriodVuDays:   KLineCodec.decodeDownloadPeriod(dlVuResp),
       downloadPeriodCardDays: KLineCodec.decodeDownloadPeriod(dlCardResp),
+      systemSupplierIdentifier:       KLineCodec.decodeAsciiTrimmed(supplierResp),
+      swNumber:                       KLineCodec.decodeAsciiTrimmed(swNumResp),
+      exhaustRegOrTypeApprovalNumber: KLineCodec.decodeAsciiTrimmed(exhaustResp),
     );
   }
 
@@ -375,7 +480,46 @@ class KLineService {
     final dagsResp     = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd41PeriodicDags8255) : const <int>[];
     final cardWarnResp = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd51CardExistenceWarning8255) : const <int>[];
 
+    // Ortak — Sprint 5
+    final langResp        = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd19LanguageChange8255 : KLineRecords.fd0cLanguageChange);
+    final overspeedOutResp = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd1bOverspeedOutput8255 : KLineRecords.fd0dOverspeedOutput);
+    final buzzerOverResp  = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd1fBuzzerOverspeed8255 : KLineRecords.fd0eBuzzerOverspeed);
+    final overspeedTco1Resp = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd3aOverspeedTco18255 : KLineRecords.fd10OverspeedTco1);
+    final tco1HandlingResp = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd3cTco1HandlingInfo8255 : KLineRecords.fd13Tco1HandlingInfo);
+    final canASyncResp    = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd33CanASyncJump8255 : KLineRecords.fd15CanASyncJump);
+    final canCSyncResp    = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd36CanCSyncJump8255 : KLineRecords.fd17CanCSyncJump);
+    final canAOnOffResp   = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd31CanAOnOff8255 : KLineRecords.fd19CanAOnOff);
+    final canCOnOffResp   = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd34CanCOnOff8255 : KLineRecords.fd03CanCOnOff);
+    final cardExpiryResp  = await _rdbiOrEmpty(isStc8255 ? KLineRecords.fd22CardExpiryDates8255 : KLineRecords.fd02CardExpiryDates);
+
+    // STC8250'ye özel — Sprint 5
+    final canCTco1Resp    = isStc8255 ? const <int>[] : await _rdbiOrEmpty(KLineRecords.fd05CanCTco1);
+    final backlightResp   = isStc8255 ? const <int>[] : await _rdbiOrEmpty(KLineRecords.fd0aBacklightBattery);
+    final outShaftResp    = isStc8255 ? const <int>[] : await _rdbiOrEmpty(KLineRecords.fd12OutputShaftSpeedEnable);
+    final canASampleResp  = isStc8255 ? const <int>[] : await _rdbiOrEmpty(KLineRecords.fd14CanASample);
+    final canCSampleResp  = isStc8255 ? const <int>[] : await _rdbiOrEmpty(KLineRecords.fd16CanCSample);
+    final imsPgnResp      = isStc8255 ? const <int>[] : await _rdbiOrEmpty(KLineRecords.fd18ImsCanPgn);
+
+    // STC8255'e özel — Sprint 5
+    final nProfileRegResp = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd12NProfileRegistry8255) : const <int>[];
+    final nSpeedResp      = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd13NSpeedProfiles8255) : const <int>[];
+    final vProfileRegResp = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd14VProfileRegistry8255) : const <int>[];
+    final vSpeedResp      = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd15VSpeedProfiles8255) : const <int>[];
+    final nFactorResp     = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd16NFactor8255) : const <int>[];
+    final d1d2Resp        = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd1dD1D2StateEnable8255) : const <int>[];
+    final engineSpeedResp = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd23EngineSpeedSource8255) : const <int>[];
+    final canProtoResp    = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd30CanProtocols8255) : const <int>[];
+    final canTermResp     = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd3dCanTerminations8255) : const <int>[];
+    final rddwSleepResp   = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd3eRddwInSleep8255) : const <int>[];
+    final dagsBuzzerResp  = isStc8255 ? await _rdbiOrEmpty(KLineRecords.fd50DagsBuzzerControl8255) : const <int>[];
+
     await _endTransaction();
+
+    final cardExpiry = KLineCodec.decodeCardExpiryDates(cardExpiryResp);
+    final backlight = isStc8255 ? null : KLineCodec.decodeBacklightBattery(backlightResp);
+    final d1d2 = isStc8255 ? KLineCodec.decodeD1D2Enable(d1d2Resp) : null;
+    final canProto = isStc8255 ? KLineCodec.decodeCanProtocols(canProtoResp) : null;
+    final canTerm = isStc8255 ? KLineCodec.decodeCanTerminations(canTermResp) : null;
 
     return OptionalSettingsSnapshot(
       speedometerFactor:       KLineCodec.decodeSpeedometerFactor(speedResp),
@@ -391,6 +535,47 @@ class KLineService {
       gnssAntenna:             isStc8255 ? KLineCodec.decodeGnssAntenna(gnssResp) : null,
       periodicDags:            isStc8255 ? KLineCodec.decodeEnabledByte(dagsResp) : null,
       cardExistenceWarning:    isStc8255 ? KLineCodec.decodeCardExistenceWarning(cardWarnResp) : null,
+
+      // Ortak — Sprint 5
+      languageChange:          KLineCodec.decodeLanguageChange(langResp),
+      overspeedOutput:         KLineCodec.decodeOverspeedOutput(overspeedOutResp),
+      buzzerOverspeedControl:  KLineCodec.decodeEnabledByte(buzzerOverResp),
+      overspeedTco1:           KLineCodec.decodeEnabledByte(overspeedTco1Resp),
+      tco1HandlingInfo:        KLineCodec.decodeTco1HandlingInfo(tco1HandlingResp),
+      canASyncJump:            KLineCodec.decodeRawByte(canASyncResp),
+      canCSyncJump:            KLineCodec.decodeRawByte(canCSyncResp),
+      canAOnOff:               isStc8255 ? KLineCodec.decodeEnabledByte(canAOnOffResp) : KLineCodec.decodeEnabledUint16(canAOnOffResp),
+      canCOnOff:               isStc8255 ? KLineCodec.decodeEnabledByte(canCOnOffResp) : KLineCodec.decodeEnabledUint16(canCOnOffResp),
+      cardExpiryControl:       cardExpiry?.$1,
+      cardExpiryDriver:        cardExpiry?.$2,
+      cardExpiryWorkshop:      cardExpiry?.$3,
+      cardExpiryCompany:       cardExpiry?.$4,
+      cardExpiryCalibration:   cardExpiry?.$5,
+
+      // STC8250'ye özel — Sprint 5
+      canCTco1:                isStc8255 ? null : KLineCodec.decodeCanCTco1(canCTco1Resp),
+      backlightLevel:          backlight?.$1,
+      backlightBattery:        backlight?.$2,
+      outputShaftSpeedEnable:  isStc8255 ? null : KLineCodec.decodeEnabledByte(outShaftResp),
+      canASample:              isStc8255 ? null : KLineCodec.decodeCanSamplePoint(canASampleResp),
+      canCSample:              isStc8255 ? null : KLineCodec.decodeCanSamplePoint(canCSampleResp),
+      imsCanPgn:               isStc8255 ? null : KLineCodec.decodeImsCanPgn(imsPgnResp),
+
+      // STC8255'e özel — Sprint 5
+      nProfileRegistry:        isStc8255 ? KLineCodec.decodeEnabledByte(nProfileRegResp) : null,
+      nSpeedProfiles:          isStc8255 ? KLineCodec.decodeNSpeedProfiles(nSpeedResp) : null,
+      vProfileRegistry:        isStc8255 ? KLineCodec.decodeEnabledByte(vProfileRegResp) : null,
+      vSpeedProfiles:          isStc8255 ? KLineCodec.decodeVSpeedProfiles(vSpeedResp) : null,
+      nFactor:                 isStc8255 ? KLineCodec.decodeNFactor(nFactorResp) : null,
+      d1Enable:                d1d2?.$1,
+      d2Enable:                d1d2?.$2,
+      engineSpeedSource:       isStc8255 ? KLineCodec.decodeEngineSpeedSource(engineSpeedResp) : null,
+      canProtocolP1:           canProto?.$1,
+      canProtocolP2:           canProto?.$2,
+      canATermination:         canTerm?.$1,
+      canCTermination:         canTerm?.$2,
+      rddwInSleep:             isStc8255 ? KLineCodec.decodeRawByte(rddwSleepResp) : null,
+      dagsBuzzerControl:       isStc8255 ? KLineCodec.decodeEnabledByte(dagsBuzzerResp) : null,
     );
   }
 
@@ -544,10 +729,19 @@ class KLineService {
     await _beginTransaction();
     await _startSession(KLineSession.adjustment);
 
-    // startRoutine
-    await _transact(
+    // startRoutine — 0x0155'in gerçek donanımda doğrulanmamış bir varsayım
+    // olması nedeniyle (bkz. PossibleProblems.md), yanıt kontrol edilmeden
+    // 60s'lik polling döngüsüne girilirse "routine not supported" durumu
+    // yanıltıcı bir "conditionsNotCorrect" mesajı olarak görünebilir.
+    final startResp = await _transact(
       KLineFrame.routineControl(KLineRoutineSelect.startRoutine, routineId),
     );
+    if (startResp.isNegative) {
+      await _startSession(KLineSession.standard);
+      await _endTransaction();
+      yield MsPairingStatus.routineNotSupported;
+      return;
+    }
 
     final deadline = DateTime.now().add(const Duration(seconds: 60));
     while (DateTime.now().isBefore(deadline)) {
@@ -707,7 +901,13 @@ class KLineService {
             KLineRoutineSelect.startRoutine, routineId, slotNumber)
         : KLineFrame.routineControl(KLineRoutineSelect.startRoutine, routineId);
 
-    await _transact(frame);
+    final resp = await _transact(frame);
+    if (resp.isNegative) {
+      throw KLineException(
+        'RoutineControl (start) 0x${routineId.toRadixString(16).toUpperCase()} başarısız',
+        nrc: resp.nrc,
+      );
+    }
   }
 
   // operatorResult: true=SUCCESSFUL(0x01), false=FAILED(0x00), null=plain stop
@@ -720,9 +920,41 @@ class KLineService {
           )
         : KLineFrame.routineControl(KLineRoutineSelect.stopRoutine, routineId);
 
-    await _transact(frame);
+    final resp = await _transact(frame);
     await _startSession(KLineSession.standard);
     await _endTransaction();
+    if (resp.isNegative) {
+      throw KLineException(
+        'RoutineControl (stop) 0x${routineId.toRadixString(16).toUpperCase()} başarısız',
+        nrc: resp.nrc,
+      );
+    }
+  }
+
+  // startRoutineTest() ile açılan rutin için tamamlanma bekler — bazı rutinler
+  // (Hardware/Battery/Data Memory/SW Integrity) tamamlandığında kendi kendine
+  // sonuç bildirir (CONDITIONS_NOT_CORRECT NRC'si veya bir sonuç baytıyla).
+  // pairMotionSensor()'daki poll deseninin (yukarıda) genelleştirilmiş hali.
+  // Transaction'ı KAPATMAZ — çağıran ardından stopRoutineTest() ile kapatmalı.
+  Future<RoutineCompletionStatus> pollRoutineCompletion(
+    int routineId, {
+    Duration timeout = const Duration(seconds: 10),
+    Duration pollInterval = const Duration(milliseconds: 250),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(pollInterval);
+      final resp = await _transact(
+        KLineFrame.routineControl(KLineRoutineSelect.requestRoutineResults, routineId),
+      );
+      if (resp.isNegative && resp.nrc == KLineNrc.conditionsNotCorrect) {
+        return RoutineCompletionStatus.conditionsNotCorrect;
+      }
+      if (!resp.isNegative && resp.data.isNotEmpty) {
+        return RoutineCompletionStatus.completed;
+      }
+    }
+    return RoutineCompletionStatus.timedOut;
   }
 
   // ── DTC Servisleri ────────────────────────────────────────────────────────
@@ -841,7 +1073,7 @@ class KLineService {
     // Önceki isteğin çözülemeyen/artık baytlarının bu yeni isteğin yanıtını
     // kirletmesini önle — her request-response çifti temiz bir tamponla başlar.
     _buffer.clear();
-    await _transport.writeCharacteristic('SPP_DATA', frame);
+    await _write(frame);
     return _waitResponse(
       timeout: timeout ?? KLineTiming.defaultTimeout,
       retryOnNrc78: retryOnNrc78,
@@ -850,7 +1082,57 @@ class KLineService {
 
   // Yanıt beklenmeden gönderim (TesterPresent no-response)
   Future<void> _sendNoReply(List<int> frame) async {
-    await _transport.writeCharacteristic('SPP_DATA', frame);
+    await _write(frame);
+  }
+
+  // Frame'i K-LINE'ın gerçek zamanlama gereksinimine (ISO 14230 P4min ≥ 5 ms
+  // bayt-arası boşluk) uygun şekilde bayt bayt yazar — STKC referans firmware'i
+  // (Kline_Port.c::Send_KLINE_Package_Receive_Response) her baytı ayrı UART_write
+  // ile gönderip aralarında Task_sleep(5) uyguluyor; bu birebir aynısını yapar.
+  // Frame'in tamamını tek seferde yazmak bu boşluğu garanti etmiyordu ve gerçek
+  // donanımda takografın kendi debug çıktısında bağlantı anında görülen
+  // "FMT not correct / TGT check failure / SRC check failure" header-hizalama
+  // hatalarının kök nedeniydi (bkz. PossibleProblems.md).
+  //
+  // K-LINE tek telli (half-duplex) olduğundan köprü adaptörü ham geçiş
+  // yapıyorsa gönderdiğimiz baytlar aynı hat üzerinden bize yankı olarak geri
+  // dönebilir (STKC de bunu bilerek okuyup atıyor) — expectEcho() bu yankıyı
+  // gerçek yanıtla karışmadan sessizce tüketir.
+  //
+  // Teşhis: aynı header-hizalama hatası (PossibleProblems.md #17) artık
+  // StartCommunication dışında HER RDBI/WDBI isteğinde de gözlemleniyor —
+  // yazılım tarafındaki interByteDelay, writeCharacteristic() çağrısının
+  // KENDİSİNİN ne kadar sürdüğünü (BLE ack round-trip / soket gecikmesi)
+  // hesaba katmıyor; bu yüzden gerçek bayt-arası boşluk P4max=20ms'i aşıyor
+  // olabilir. Aşağıdaki ölçüm, bir sonraki donanım testinde gerçek boşlukları
+  // doğrudan görünür kılmak için eklendi — henüz bir "düzeltme" değil.
+  Future<void> _write(List<int> frame) async {
+    _buffer.expectEcho(frame);
+    DateTime? previousByteSentAt;
+    for (var i = 0; i < frame.length; i++) {
+      final callStart = DateTime.now();
+      if (previousByteSentAt != null) {
+        final gapBeforeWrite = callStart.difference(previousByteSentAt).inMilliseconds;
+        AppLogger.instance.log(
+          'Bayt ${i + 1}/${frame.length}: bir önceki bayttan bu yana ${gapBeforeWrite}ms geçti '
+          '(P4 penceresi: 5-20ms)',
+          level: gapBeforeWrite < 5 || gapBeforeWrite > 20 ? LogLevel.error : LogLevel.info,
+          category: LogCategory.bluetooth,
+        );
+      }
+      await _transport.writeCharacteristic('SPP_DATA', [frame[i]]);
+      previousByteSentAt = DateTime.now();
+      final writeDuration = previousByteSentAt.difference(callStart).inMilliseconds;
+      if (writeDuration > 5) {
+        AppLogger.instance.log(
+          'Bayt ${i + 1}/${frame.length}: writeCharacteristic() çağrısı ${writeDuration}ms sürdü '
+          '(ack\'li yazım veya BLE gecikmesi olabilir)',
+          level: LogLevel.info,
+          category: LogCategory.bluetooth,
+        );
+      }
+      await Future<void>.delayed(KLineTiming.interByteDelay);
+    }
   }
 
   // Buffer'dan tam frame gelene kadar bekler
@@ -884,7 +1166,12 @@ class KLineService {
       }
       final effectiveDeadline = nrc78Deadline ?? baseDeadline;
       if (DateTime.now().isAfter(effectiveDeadline)) {
-        throw const KLineException('Yanıt zaman aşımına uğradı');
+        // nrc78Deadline set edilmişse cihaz aktif olarak "meşgul" yanıtı verip
+        // duruyordu — bu gerçek bir hata (KLineException), sessizce yutulmamalı.
+        if (nrc78Deadline != null) {
+          throw const KLineException('NRC 0x78 azami bekleme süresi aşıldı');
+        }
+        throw const KLineTimeoutException('Yanıt zaman aşımına uğradı');
       }
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }

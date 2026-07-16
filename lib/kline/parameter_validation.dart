@@ -76,24 +76,40 @@ class ParameterValidator {
   }
 
   static String _validateNumber(CalParam param, String raw) {
+    final range = _numericRanges[param.id];
+    final value = range != null
+        ? validateNumberInRange(raw, label: param.label, min: range.$1, max: range.$2)
+        : _parseInteger(raw, param.label);
+    return value.toString();
+  }
+
+  /// Genel amaçlı tam sayı + aralık doğrulaması. `CalParam`'a bağlı olmayan
+  /// çağıranlar (ör. Opsiyonel Ayarlar ekranı) için de kullanılabilir.
+  /// Geçersizse [ParamValidationException] fırlatır.
+  static int validateNumberInRange(
+    String raw, {
+    required String label,
+    required int min,
+    required int max,
+  }) {
+    final value = _parseInteger(raw, label);
+    if (value < min || value > max) {
+      throw ParamValidationException('$label: Değer $min–$max aralığında olmalıdır.');
+    }
+    return value;
+  }
+
+  static int _parseInteger(String raw, String label) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) {
-      throw ParamValidationException('${param.label}: Bu alan boş bırakılamaz.');
+      throw ParamValidationException('$label: Bu alan boş bırakılamaz.');
     }
     if (!_integerPattern.hasMatch(trimmed)) {
       throw ParamValidationException(
-        '${param.label}: Bu alan tam sayı olmalıdır (ondalık kabul edilmiyor).',
+        '$label: Bu alan tam sayı olmalıdır (ondalık kabul edilmiyor).',
       );
     }
-    final value = int.parse(trimmed);
-    final range = _numericRanges[param.id];
-    if (range != null) {
-      final (min, max) = range;
-      if (value < min || value > max) {
-        throw ParamValidationException('${param.label}: Değer $min–$max aralığında olmalıdır.');
-      }
-    }
-    return value.toString();
+    return int.parse(trimmed);
   }
 
   static String _validateDate(String raw) {

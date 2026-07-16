@@ -8,6 +8,7 @@ import '../bluetooth/models/ble_device_result.dart';
 import '../bluetooth/repositories/ble_connection_repository.dart';
 import '../bluetooth/repositories/ble_scanner_repository.dart';
 import '../core/exceptions/ble_exception.dart';
+import '../models/calibration_data.dart';
 import 'ble_terminal_screen.dart';
 
 enum _ScanState { idle, scanning, error }
@@ -200,32 +201,32 @@ class _BleScanScreenState extends State<BleScanScreen> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      color: const Color(0xFFF0F8FC),
+      color: CalColors.surfaceLow,
       child: Row(
         children: [
           Icon(
             _showAll ? Icons.filter_alt_off_outlined : Icons.filter_alt_outlined,
             size: 14,
-            color: const Color(0xFF4A7A8A),
+            color: CalColors.onSurfaceVariant,
           ),
           const SizedBox(width: 5),
           Text(
             _showAll
                 ? 'Sinyal filtresi devre dışı ($hc cihaz)'
                 : '$hc zayıf sinyalli cihaz gizlendi',
-            style: const TextStyle(fontSize: 12, color: Color(0xFF4A7A8A)),
+            style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant),
           ),
           const Spacer(),
           GestureDetector(
             onTap: () => setState(() => _showAll = !_showAll),
             child: Text(
               _showAll ? 'Filtreyi Aç' : 'Tümünü Göster',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: Color(0xFF1A5F7A),
+                color: CalColors.primaryContainer,
                 fontWeight: FontWeight.w700,
                 decoration: TextDecoration.underline,
-                decorationColor: Color(0xFF1A5F7A),
+                decorationColor: CalColors.primaryContainer,
               ),
             ),
           ),
@@ -238,9 +239,9 @@ class _BleScanScreenState extends State<BleScanScreen> {
   Widget build(BuildContext context) {
     final filtered = _filteredDevices;
     return Scaffold(
-      backgroundColor: const Color(0xFFE8F4F8),
+      backgroundColor: CalColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A5F7A),
+        backgroundColor: CalColors.primaryContainer,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -308,18 +309,18 @@ class _TransportSelector extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Bluetooth Türü Seçin',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF0D3347),
+              color: CalColors.onSurface,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Cihazınıza uygun bağlantı yöntemini seçin.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF4A7A8A)),
+            style: TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant),
           ),
           const SizedBox(height: 28),
           IntrinsicHeight(
@@ -391,9 +392,9 @@ class _TransportCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: CalColors.surfaceLowest,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFC4DDE6), width: 1.5),
+            border: Border.all(color: CalColors.outlineVariant, width: 1.5),
             boxShadow: const [
               BoxShadow(color: Color(0x0A000000), blurRadius: 6, offset: Offset(0, 3)),
             ],
@@ -405,7 +406,7 @@ class _TransportCard extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: accentColor ?? const Color(0xFF1A5F7A),
+                  color: accentColor ?? CalColors.primaryContainer,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, color: Colors.white, size: 28),
@@ -414,10 +415,10 @@ class _TransportCard extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF0D3347),
+                  color: CalColors.onSurface,
                   height: 1.3,
                 ),
               ),
@@ -425,9 +426,9 @@ class _TransportCard extends StatelessWidget {
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF4A7A8A),
+                  color: CalColors.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -450,20 +451,20 @@ class _StatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final (color, bg, icon, label) = switch (state) {
       _ScanState.scanning => (
-          const Color(0xFF1A5F7A),
-          const Color(0xFFE1F2F7),
+          CalColors.primaryContainer,
+          CalColors.surfaceContainer,
           Icons.bluetooth_searching,
           'Taranıyor...',
         ),
       _ScanState.error => (
-          const Color(0xFFDC2626),
-          const Color(0xFFFEF2F2),
+          CalColors.error,
+          CalColors.errorContainer,
           Icons.error_outline,
           'Hata oluştu',
         ),
       _ScanState.idle => (
-          const Color(0xFF4A7A8A),
-          const Color(0xFFF0F8FC),
+          CalColors.onSurfaceVariant,
+          CalColors.surfaceLow,
           Icons.bluetooth,
           'Hazır',
         ),
@@ -476,10 +477,10 @@ class _StatusBanner extends StatelessWidget {
       child: Row(
         children: [
           if (state == _ScanState.scanning)
-            const SizedBox(
+            SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1A5F7A)),
+              child: CircularProgressIndicator(strokeWidth: 2, color: CalColors.primaryContainer),
             )
           else
             Icon(icon, color: color, size: 16),
@@ -518,32 +519,32 @@ class _ErrorBanner extends StatelessWidget {
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEE2E2),
+        color: CalColors.errorContainer,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
+        border: Border.all(color: CalColors.error.withValues(alpha: 0.4)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 1),
-            child: Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 18),
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(Icons.warning_amber_rounded, color: CalColors.error, size: 18),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: Color(0xFF7F1D1D), fontSize: 12, height: 1.4),
+              style: TextStyle(color: CalColors.onErrorContainer, fontSize: 12, height: 1.4),
             ),
           ),
           if (onRetry != null) ...[
             const SizedBox(width: 8),
             GestureDetector(
               onTap: onRetry,
-              child: const Text(
+              child: Text(
                 'Tekrar Dene',
                 style: TextStyle(
-                  color: Color(0xFFDC2626),
+                  color: CalColors.error,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   decoration: TextDecoration.underline,
@@ -581,14 +582,14 @@ class _DeviceList extends StatelessWidget {
             Icon(
               Icons.bluetooth_disabled,
               size: 56,
-              color: Colors.grey.shade300,
+              color: CalColors.outlineVariant,
             ),
             const SizedBox(height: 12),
             Text(
               state == _ScanState.scanning
                   ? 'Cihazlar aranıyor...'
                   : '"Tara" butonuna basarak başlayın.',
-              style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+              style: TextStyle(color: CalColors.onSurfaceVariant, fontSize: 14),
             ),
           ],
         ),
@@ -636,12 +637,12 @@ class _DeviceCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: CalColors.surfaceLowest,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: device.isTachographDevice
                 ? const Color(0xFF15803D)
-                : const Color(0xFFC4DDE6),
+                : CalColors.outlineVariant,
             width: device.isTachographDevice ? 1.5 : 1.0,
           ),
           boxShadow: const [
@@ -662,8 +663,8 @@ class _DeviceCard extends StatelessWidget {
                         device.displayName,
                         style: TextStyle(
                           color: device.hasName
-                              ? const Color(0xFF0D3347)
-                              : const Color(0xFF4A7A8A),
+                              ? CalColors.onSurface
+                              : CalColors.onSurfaceVariant,
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           fontStyle: device.hasName ? FontStyle.normal : FontStyle.italic,
@@ -717,7 +718,7 @@ class _InfoLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const c = Color(0xFF4A7A8A);
+    final c = CalColors.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(top: 3),
       child: Row(

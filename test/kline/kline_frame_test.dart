@@ -81,7 +81,7 @@ void main() {
 
     test('unrecognized format bytes are skipped one at a time until resync', () {
       final buffer = KLineFrameBuffer();
-      // 0xAA ne standart (0x80) ne fast-init yanıt (0xC1) formatına uyuyor.
+      // 0xAA standart formata (0x80) uymuyor.
       buffer.add(List<int>.filled(20, 0xAA));
       buffer.add(_buildStandardResponse(sid: 0x50, data: [0x81]));
 
@@ -114,5 +114,81 @@ void main() {
         expect(resp.data, [0x81]);
       },
     );
+  });
+
+  group('KLineFrameBuffer.expectEcho', () {
+    test('a full echo of the last-sent frame is silently discarded, real response still parses', () {
+      final buffer = KLineFrameBuffer();
+      final sent = [0x81, 0xEE, 0xF0, 0x81, 0xE0]; // StartCommunication
+      // StartCommunication Positive Response — Regulation (EU) 2016/799,
+      // Annex 1C App.8, Table 6: 80 F0 EE 03 C1 EA 8F CS.
+      final response = _buildStandardResponse(sid: 0xC1, data: const [0xEA, 0x8F]);
+
+      buffer.expectEcho(sent);
+      buffer.add(sent); // K-LINE half-duplex echo of our own transmission
+      buffer.add(response);
+
+      // Echo must not have produced a parseable (or garbage) frame on its own.
+      final resp = buffer.tryParse();
+      expect(resp, isNotNull);
+      expect(resp!.sid, 0xC1);
+    });
+
+    test('echo split across multiple add() calls is still fully suppressed', () {
+      final buffer = KLineFrameBuffer();
+      final sent = [0x81, 0xEE, 0xF0, 0x81, 0xE0];
+      // StartCommunication Positive Response — Regulation (EU) 2016/799,
+      // Annex 1C App.8, Table 6: 80 F0 EE 03 C1 EA 8F CS.
+      final response = _buildStandardResponse(sid: 0xC1, data: const [0xEA, 0x8F]);
+
+      buffer.expectEcho(sent);
+      for (final byte in sent) {
+        buffer.add([byte]); // one byte per Bluetooth notify, worst case
+      }
+      buffer.add(response);
+
+      final resp = buffer.tryParse();
+      expect(resp, isNotNull);
+      expect(resp!.sid, 0xC1);
+    });
+
+    test('bytes that only partially match the expected echo fall through to normal parsing', () {
+      final buffer = KLineFrameBuffer();
+      buffer.expectEcho([0x81, 0xEE, 0xF0, 0x81, 0xE0]);
+
+      // Diverges after 2 matching bytes — not an echo, must not be swallowed.
+      buffer.add(_buildStandardResponse(sid: 0x50, data: [0x81]));
+
+      final resp = buffer.tryParse();
+      expect(resp, isNotNull);
+      expect(resp!.sid, 0x50);
+    });
+
+    test(
+      'a genuine response sharing a leading byte with the request (both FMT=0x80) '
+      'is not corrupted — the tentatively-matched prefix is restored, not dropped',
+      () {
+        final buffer = KLineFrameBuffer();
+        // Request: 80 EE F0 03 22 F1 90 CS (RDBI). Response starts 80 F0 EE...
+        // — byte[0] coincidentally matches the request's FMT byte.
+        buffer.expectEcho([0x80, 0xEE, 0xF0, 0x03, 0x22, 0xF1, 0x90, 0x00]);
+        buffer.add(_buildStandardResponse(sid: 0x62, data: [0xF1, 0x90, 0x41, 0x42]));
+
+        final resp = buffer.tryParse();
+        expect(resp, isNotNull);
+        expect(resp!.sid, 0x62);
+        expect(resp.recordId, 0xF190);
+        expect(resp.data, [0x41, 0x42]);
+      },
+    );
+
+    test('without expectEcho(), incoming bytes are handled exactly as before (no regression)', () {
+      final buffer = KLineFrameBuffer();
+      buffer.add(_buildStandardResponse(sid: 0x50, data: [0x81]));
+
+      final resp = buffer.tryParse();
+      expect(resp, isNotNull);
+      expect(resp!.sid, 0x50);
+    });
   });
 }

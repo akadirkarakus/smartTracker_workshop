@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../bluetooth/models/log_entry.dart';
 import '../../core/app_logger.dart';
+import '../../kline/parameter_validation.dart';
 import '../../models/calibration_data.dart';
 
 class WConstantMeasurementScreen extends StatefulWidget {
-  final void Function(String wValue) onWriteResult;
-  final Future<int?> Function()? onMeasure;
+  final Future<bool> Function(String wValue) onWriteResult;
 
-  const WConstantMeasurementScreen({super.key, required this.onWriteResult, this.onMeasure});
+  const WConstantMeasurementScreen({super.key, required this.onWriteResult});
 
   @override
   State<WConstantMeasurementScreen> createState() => _WConstantMeasurementScreenState();
@@ -18,62 +18,88 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
   String? _measuredValue;
   String? _errorMessage;
 
-  Future<void> _startMeasurement() async {
-    if (widget.onMeasure == null) {
-      setState(() {
-        _state = _MeasureState.idle;
-        _errorMessage = 'Cihaz bağlı değil.';
-      });
-      return;
-    }
-    AppLogger.instance.log(
-      'W-constant measurement started',
-      level: LogLevel.info,
-      category: LogCategory.calibration,
+  Future<void> _enterValue() async {
+    final controller = TextEditingController();
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('W-Sabiti Değerini Gir', style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.primary)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'W-Sabiti',
+            suffixText: 'imp/km',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Vazgeç')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: CalColors.primary, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Onayla'),
+          ),
+        ],
+      ),
     );
-    setState(() {
-      _state = _MeasureState.measuring;
-      _measuredValue = null;
-      _errorMessage = null;
-    });
+    if (entered == null) return;
 
     try {
-      final result = await widget.onMeasure!();
-      if (!mounted) return;
-      if (result != null) {
-        setState(() {
-          _state = _MeasureState.done;
-          _measuredValue = result.toString();
-        });
-        AppLogger.instance.log(
-          'W-constant measurement result: $result imp/km',
-          level: LogLevel.success,
-          category: LogCategory.calibration,
-        );
-      } else {
-        setState(() {
-          _state = _MeasureState.idle;
-          _errorMessage = 'Ölçüm sonucu alınamadı.';
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
+      final normalized = ParameterValidator.validateNumberInRange(
+        entered,
+        label: 'W-Sabiti',
+        min: 1,
+        max: 65535,
+      );
+      setState(() {
+        _state = _MeasureState.done;
+        _measuredValue = normalized.toString();
+        _errorMessage = null;
+      });
+    } on ParamValidationException catch (e) {
       setState(() {
         _state = _MeasureState.idle;
-        _errorMessage = 'Ölçüm hatası: $e';
+        _errorMessage = e.message;
       });
     }
   }
 
   Future<void> _acceptAndWrite() async {
     setState(() => _state = _MeasureState.writing);
-    AppLogger.instance.log(
-      'W-constant written to tachograph: $_measuredValue imp/km',
-      level: LogLevel.success,
-      category: LogCategory.calibration,
-    );
-    widget.onWriteResult(_measuredValue!);
-    if (mounted) Navigator.pop(context);
+    bool success;
+    try {
+      success = await widget.onWriteResult(_measuredValue!);
+    } on ParamValidationException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = _MeasureState.done;
+        _errorMessage = e.message;
+      });
+      return;
+    } catch (e) {
+      AppLogger.instance.log(
+        'W-constant write error: $e',
+        level: LogLevel.error,
+        category: LogCategory.calibration,
+      );
+      success = false;
+    }
+    if (!mounted) return;
+    if (success) {
+      AppLogger.instance.log(
+        'W-constant written to tachograph: $_measuredValue imp/km',
+        level: LogLevel.success,
+        category: LogCategory.calibration,
+      );
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _state = _MeasureState.done;
+        _errorMessage = 'Yazma işlemi başarısız. Bağlantıyı kontrol edin.';
+      });
+    }
   }
 
   void _reset() {
@@ -93,10 +119,10 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: CalColors.primary),
+          icon: Icon(Icons.arrow_back, color: CalColors.primary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('W-Sabiti Ölçümü', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Text('W-Sabiti Girişi', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Container(height: 1, color: CalColors.outlineVariant)),
       ),
       body: SafeArea(
@@ -119,12 +145,12 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
                       children: [
                         Icon(Icons.speed, color: Colors.white, size: 20),
                         SizedBox(width: 8),
-                        Text('Ölçüm Nasıl Çalışır?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+                        Text('Bu Ekran Ne İşe Yarar?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
                       ],
                     ),
                     SizedBox(height: 8),
                     Text(
-                      'Cihaz, takografa bilinen bir hız darbe dizisi gönderir. Takograf raporlanan hızla karşılaştırarak W-sabitini otomatik hesaplar.',
+                      'W-sabiti otomatik olarak ölçülmez. Değeri harici bir test düzeneğinde (dinamometre/test bankı) ölçüp aşağıya elle girin; onayladığınızda değer doğrudan takografa yazılır.',
                       style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.5),
                     ),
                   ],
@@ -146,27 +172,24 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(color: CalColors.errorContainer, borderRadius: BorderRadius.circular(8)),
-                          child: Text(_errorMessage!, style: const TextStyle(fontSize: 13, color: CalColors.onErrorContainer)),
+                          child: Text(_errorMessage!, style: TextStyle(fontSize: 13, color: CalColors.onErrorContainer)),
                         ),
                         const SizedBox(height: 12),
                       ],
-                      _StepCard(step: 1, text: 'Araç durdurulmuş ve takograf atölye modunda olmalı'),
+                      _StepCard(step: 1, text: 'W-sabitini harici test düzeneği/dinamometre ile ölçün'),
                       const SizedBox(height: 8),
-                      _StepCard(step: 2, text: 'Cihaz, hız giriş I/O komutunu etkinleştirecek'),
+                      _StepCard(step: 2, text: 'Ölçülen imp/km değerini "Değeri Gir" ile girin'),
                       const SizedBox(height: 8),
-                      _StepCard(step: 3, text: 'Darbe dizisi gönderilerek W-sabiti hesaplanacak'),
-                    ] else if (_state == _MeasureState.measuring) ...[
-                      const Text('Ölçüm devam ediyor...', style: TextStyle(fontSize: 16, color: CalColors.onSurface, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 12),
-                      const ClipRRect(
-                        borderRadius: BorderRadius.all(Radius.circular(6)),
-                        child: LinearProgressIndicator(
-                          backgroundColor: CalColors.surfaceContainer,
-                          color: CalColors.primary,
-                          minHeight: 8,
-                        ),
-                      ),
+                      _StepCard(step: 3, text: 'Değeri onaylayıp takografa yazın'),
                     ] else if (_state == _MeasureState.done) ...[
+                      if (_errorMessage != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(color: CalColors.errorContainer, borderRadius: BorderRadius.circular(8)),
+                          child: Text(_errorMessage!, style: TextStyle(fontSize: 13, color: CalColors.onErrorContainer)),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -176,20 +199,20 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
                         ),
                         child: Column(
                           children: [
-                            const Text('Ölçüm Sonucu', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
-                            const SizedBox(height: 8),
+                            Text('Ölçüm Sonucu', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+                            SizedBox(height: 8),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.baseline,
                               textBaseline: TextBaseline.alphabetic,
                               children: [
-                                Text(_measuredValue!, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w700, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
-                                const SizedBox(width: 8),
-                                const Text('imp/km', style: TextStyle(fontSize: 16, color: CalColors.onSurfaceVariant)),
+                                Text(_measuredValue!, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
+                                SizedBox(width: 8),
+                                Text('imp/km', style: TextStyle(fontSize: 16, color: CalColors.onSurfaceVariant)),
                               ],
                             ),
-                            const SizedBox(height: 4),
-                            const Text('Ölçüm başarılı ✓', style: TextStyle(fontSize: 13, color: CalColors.accent, fontWeight: FontWeight.w600)),
+                            SizedBox(height: 4),
+                            Text('Ölçüm başarılı ✓', style: TextStyle(fontSize: 13, color: CalColors.accent, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -200,13 +223,13 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
 
               // Info note
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: CalColors.surfaceLow,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: CalColors.outlineVariant),
                 ),
-                child: const Row(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(Icons.warning_amber_outlined, size: 16, color: CalColors.outline),
@@ -227,27 +250,15 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
                 SizedBox(
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: _startMeasurement,
+                    onPressed: _enterValue,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: CalColors.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
                     ),
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Ölçümü Başlat', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  ),
-                )
-              else if (_state == _MeasureState.measuring)
-                SizedBox(
-                  height: 52,
-                  child: OutlinedButton(
-                    onPressed: _reset,
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: CalColors.outline),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('İptal', style: TextStyle(color: CalColors.outline, fontSize: 16)),
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Değeri Gir', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                   ),
                 )
               else if (_state == _MeasureState.done)
@@ -271,16 +282,16 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: 12),
                     SizedBox(
                       height: 52,
                       child: OutlinedButton(
                         onPressed: _reset,
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: CalColors.outlineVariant, width: 2),
+                          side: BorderSide(color: CalColors.outlineVariant, width: 2),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Yenile', style: TextStyle(color: CalColors.onSurfaceVariant)),
+                        child: Text('Yenile', style: TextStyle(color: CalColors.onSurfaceVariant)),
                       ),
                     ),
                   ],
@@ -293,7 +304,7 @@ class _WConstantMeasurementScreenState extends State<WConstantMeasurementScreen>
   }
 }
 
-enum _MeasureState { idle, measuring, done, writing }
+enum _MeasureState { idle, done, writing }
 
 class _StepCard extends StatelessWidget {
   final int step;
@@ -315,12 +326,12 @@ class _StepCard extends StatelessWidget {
           Container(
             width: 26,
             height: 26,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: CalColors.primaryContainer),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: CalColors.primaryContainer),
             alignment: Alignment.center,
             child: Text('$step', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant, height: 1.4))),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant, height: 1.4))),
         ],
       ),
     );
@@ -337,8 +348,7 @@ class _MeasureGauge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (icon, color, bg) = switch (state) {
       _MeasureState.idle => (Icons.speed, CalColors.outline, CalColors.surfaceContainer),
-      _MeasureState.measuring => (Icons.sync, CalColors.primary, CalColors.surfaceLow),
-      _MeasureState.done || _MeasureState.writing => (Icons.check_circle, CalColors.accent, CalColors.tertiaryFixed),
+      _MeasureState.done || _MeasureState.writing => (Icons.check_circle, CalColors.onTertiaryFixed, CalColors.tertiaryFixed),
     };
 
     return AnimatedContainer(
@@ -346,12 +356,7 @@ class _MeasureGauge extends StatelessWidget {
       width: 100,
       height: 100,
       decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
-      child: state == _MeasureState.measuring
-          ? const Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(color: CalColors.primary, strokeWidth: 4),
-            )
-          : Icon(icon, color: color, size: 52),
+      child: Icon(icon, color: color, size: 52),
     );
   }
 }

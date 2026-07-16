@@ -62,6 +62,10 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
             case MsPairingStatus.conditionsNotCorrect:
               _state = _PairState.failed;
               _statusMessage = 'Koşullar uygun değil (NRC 0x22). Araç durdurulmuş olmalı.';
+            case MsPairingStatus.routineNotSupported:
+              _state = _PairState.failed;
+              _statusMessage = 'Bu takograf modeli motion sensor eşleştirmesini desteklemiyor olabilir '
+                  '(routine ID doğrulanmamış — bkz. PossibleProblems.md).';
           }
         });
       },
@@ -94,10 +98,10 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: CalColors.primary),
+          icon: Icon(Icons.arrow_back, color: CalColors.primary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Hareket Sensörü Eşleştirme', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Text('Hareket Sensörü Eşleştirme', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Container(height: 1, color: CalColors.outlineVariant)),
       ),
       body: SafeArea(
@@ -115,7 +119,7 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
                     const SizedBox(height: 24),
                     Text(
                       _stateTitle,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: CalColors.onSurface),
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: CalColors.onSurface),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
@@ -128,7 +132,7 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
                       ),
                       child: Text(
                         _statusMessage,
-                        style: const TextStyle(fontSize: 14, color: CalColors.onSurfaceVariant, height: 1.5),
+                        style: TextStyle(fontSize: 14, color: CalColors.onSurfaceVariant, height: 1.5),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -148,7 +152,7 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: CalColors.outlineVariant),
                 ),
-                child: const Row(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(Icons.info_outline, size: 16, color: CalColors.accent),
@@ -186,11 +190,11 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
                   child: OutlinedButton.icon(
                     onPressed: _reset,
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: CalColors.outline),
+                      side: BorderSide(color: CalColors.outline),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    icon: const Icon(Icons.stop, color: CalColors.outline),
-                    label: const Text('İptal', style: TextStyle(color: CalColors.outline, fontSize: 16)),
+                    icon: Icon(Icons.stop, color: CalColors.outline),
+                    label: Text('İptal', style: TextStyle(color: CalColors.outline, fontSize: 16)),
                   ),
                 )
               else if (_state == _PairState.success)
@@ -217,10 +221,10 @@ class _MotionSensorPairingScreenState extends State<MotionSensorPairingScreen>
                       child: OutlinedButton(
                         onPressed: _reset,
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: CalColors.outlineVariant, width: 2),
+                          side: BorderSide(color: CalColors.outlineVariant, width: 2),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Yenile', style: TextStyle(color: CalColors.onSurfaceVariant)),
+                        child: Text('Yenile', style: TextStyle(color: CalColors.onSurfaceVariant)),
                       ),
                     ),
                   ],
@@ -263,14 +267,14 @@ class _StateIcon extends StatelessWidget {
             color: CalColors.primaryContainer.withValues(alpha: 0.1 + pulseCtrl.value * 0.2),
             border: Border.all(color: CalColors.primaryContainer.withValues(alpha: 0.5 + pulseCtrl.value * 0.5), width: 3),
           ),
-          child: const Icon(Icons.sensors, color: CalColors.primaryContainer, size: 48),
+          child: Icon(Icons.sensors, color: CalColors.primaryContainer, size: 48),
         ),
       );
     }
 
     final (icon, color, bg) = switch (state) {
       _PairState.idle => (Icons.sensors_outlined, CalColors.outline, CalColors.surfaceContainer),
-      _PairState.success => (Icons.check_circle, CalColors.accent, CalColors.tertiaryFixed),
+      _PairState.success => (Icons.check_circle, CalColors.onTertiaryFixed, CalColors.tertiaryFixed),
       _PairState.failed => (Icons.error_outline, CalColors.error, CalColors.errorContainer),
       _ => (Icons.sensors, CalColors.primary, CalColors.surfaceLow),
     };
@@ -302,7 +306,7 @@ class _PollProgress extends StatelessWidget {
           minHeight: 6,
         ),
         const SizedBox(height: 6),
-        Text('Anket: $count / $max', style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+        Text('Anket: $count / $max', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
       ],
     );
   }

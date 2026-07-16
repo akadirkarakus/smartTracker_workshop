@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../bluetooth/models/log_entry.dart';
 import '../../core/app_logger.dart';
+import '../../kline/kline_records.dart';
 import '../../models/calibration_data.dart';
 
 class PinEntryScreen extends StatefulWidget {
   final void Function(bool success) onResult;
   final Future<String?> Function() onRequestSeed;
-  final Future<bool> Function(String pin) onSendKey;
+  final Future<(bool success, int? nrc)> Function(String pin) onSendKey;
   final VoidCallback onCancel;
 
   const PinEntryScreen({
@@ -72,15 +73,17 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
   }
 
   Future<void> _verify() async {
-    if (_pin.isEmpty) return;
+    if (_pin.length < 4) return;
     setState(() => _state = _PinState.verifying);
 
     _attempts++;
     bool success;
+    int? nrc;
     try {
-      success = await widget.onSendKey(_pin);
+      (success, nrc) = await widget.onSendKey(_pin);
     } catch (_) {
       success = false;
+      nrc = null;
     }
 
     if (!mounted) return;
@@ -96,7 +99,22 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
         _message = 'Kimlik doğrulama başarılı. Atölye oturumu açıldı.';
       });
       widget.onResult(true);
+    } else if (nrc == KLineNrc.exceededNumberOfAttempts) {
+      // Takograf oturumu zaten kapattı (bkz. KLineService.sendKey) — istemci
+      // sayacı 3'e ulaşmamış olsa bile gerçek ECU durumuyla senkron kalınmalı.
+      AppLogger.instance.log(
+        'PIN entry locked by tachograph (NRC 0x36)',
+        level: LogLevel.error,
+        category: LogCategory.pinAuth,
+      );
+      setState(() {
+        _state = _PinState.locked;
+        _message = 'Takograf çok fazla başarısız deneme nedeniyle kilitlendi. Yeniden bağlanmayı deneyin.';
+      });
     } else {
+      final waitNotice = nrc == KLineNrc.requiredTimeDelayNotExpired
+          ? 'Takograf bekleme süresi henüz dolmadı, birkaç saniye sonra tekrar deneyin. '
+          : '';
       if (_attempts >= 3) {
         AppLogger.instance.log(
           'PIN entry locked (3 failed attempts)',
@@ -105,17 +123,17 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
         );
         setState(() {
           _state = _PinState.locked;
-          _message = 'Çok fazla başarısız deneme. Lütfen yeniden bağlanın.';
+          _message = '$waitNoticeÇok fazla başarısız deneme. Lütfen yeniden bağlanın.';
         });
       } else {
         AppLogger.instance.log(
-          'PIN authentication failed — attempt $_attempts',
+          'PIN authentication failed — attempt $_attempts (NRC: ${nrc?.toRadixString(16) ?? '—'})',
           level: LogLevel.error,
           category: LogCategory.pinAuth,
         );
         setState(() {
           _state = _PinState.failed;
-          _message = 'PIN geçersiz. ${3 - _attempts} deneme hakkınız kaldı.';
+          _message = '${waitNotice}PIN geçersiz. ${3 - _attempts} deneme hakkınız kaldı.';
           _pin = '';
         });
       }
@@ -131,10 +149,10 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: CalColors.primary),
+          icon: Icon(Icons.arrow_back, color: CalColors.primary),
           onPressed: _cancelAndPop,
         ),
-        title: const Text('PIN Doğrulama', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Text('PIN Doğrulama', style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18)),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Container(height: 1, color: CalColors.outlineVariant)),
       ),
       body: SafeArea(
@@ -195,24 +213,16 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                     width: 2,
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(8, (i) {
-                    final filled = i < _pin.length;
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: 28,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: filled ? CalColors.primary : CalColors.surfaceContainer,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: filled ? CalColors.primary : CalColors.outlineVariant),
-                      ),
-                      child: filled
-                          ? const Icon(Icons.circle, color: Colors.white, size: 10)
-                          : null,
-                    );
-                  }),
+                alignment: Alignment.center,
+                child: Text(
+                  _pin.isEmpty ? 'PIN giriniz (4-8 hane)' : '★' * _pin.length,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: _pin.isEmpty ? 14 : 28,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: _pin.isEmpty ? 0 : 6,
+                    color: _pin.isEmpty ? CalColors.onSurfaceVariant : CalColors.primary,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -233,7 +243,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                             Icon(
                               _state == _PinState.success ? Icons.check_circle_outline : Icons.error_outline,
                               size: 16,
-                              color: _state == _PinState.success ? CalColors.tertiary : CalColors.onErrorContainer,
+                              color: _state == _PinState.success ? CalColors.onTertiaryFixed : CalColors.onErrorContainer,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -241,7 +251,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                                 _message,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: _state == _PinState.success ? CalColors.tertiary : CalColors.onErrorContainer,
+                                  color: _state == _PinState.success ? CalColors.onTertiaryFixed : CalColors.onErrorContainer,
                                 ),
                               ),
                             ),
@@ -260,13 +270,13 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.lock, color: CalColors.error, size: 48),
+                            Icon(Icons.lock, color: CalColors.error, size: 48),
                             const SizedBox(height: 12),
-                            const Text('Hesap kilitlendi', style: TextStyle(color: CalColors.error, fontWeight: FontWeight.w700, fontSize: 16)),
+                            Text('Hesap kilitlendi', style: TextStyle(color: CalColors.error, fontWeight: FontWeight.w700, fontSize: 16)),
                             const SizedBox(height: 8),
                             TextButton(
                               onPressed: _cancelAndPop,
-                              child: const Text('Geri Dön', style: TextStyle(color: CalColors.primary)),
+                              child: Text('Geri Dön', style: TextStyle(color: CalColors.primary)),
                             ),
                           ],
                         ),
@@ -274,7 +284,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                     : _PinKeypad(
                         onAppend: (_state == _PinState.verifying || _state == _PinState.fetchingSeed || _state == _PinState.seedError) ? (_) {} : _append,
                         onBackspace: (_state == _PinState.verifying || _state == _PinState.fetchingSeed || _state == _PinState.seedError) ? () {} : _backspace,
-                        onVerify: (_state == _PinState.verifying || _state == _PinState.fetchingSeed || _state == _PinState.seedError) ? null : _verify,
+                        onVerify: (_state == _PinState.verifying || _state == _PinState.fetchingSeed || _state == _PinState.seedError || _pin.length < 4) ? null : _verify,
                         isVerifying: _state == _PinState.verifying,
                       ),
               ),
@@ -351,20 +361,22 @@ class _PinKeypad extends StatelessWidget {
 class _DigitBtn extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  final Color backgroundColor;
-  final Color textColor;
+  final Color? backgroundColor;
+  final Color? textColor;
 
   const _DigitBtn({
     required this.label,
     required this.onTap,
-    this.backgroundColor = CalColors.surfaceLowest,
-    this.textColor = CalColors.primary,
+    this.backgroundColor,
+    this.textColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bgColor = backgroundColor ?? CalColors.surfaceLowest;
+    final fgColor = textColor ?? CalColors.primary;
     return Material(
-      color: backgroundColor,
+      color: bgColor,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
@@ -377,7 +389,7 @@ class _DigitBtn extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             label,
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: textColor),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: fgColor),
           ),
         ),
       ),

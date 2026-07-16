@@ -120,17 +120,16 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
       _validationError = null;
       switch (_dateFocusField) {
         case 0:
-          if (_dateDay.length < 2) {
-            _dateDay += digit;
-            if (_dateDay.length == 2) _dateFocusField = 1;
-          }
+          if (_dateDay.length >= 2) _dateDay = '';
+          _dateDay += digit;
+          if (_dateDay.length == 2) _dateFocusField = 1;
         case 1:
-          if (_dateMonth.length < 2) {
-            _dateMonth += digit;
-            if (_dateMonth.length == 2) _dateFocusField = 2;
-          }
+          if (_dateMonth.length >= 2) _dateMonth = '';
+          _dateMonth += digit;
+          if (_dateMonth.length == 2) _dateFocusField = 2;
         case 2:
-          if (_dateYear.length < 4) _dateYear += digit;
+          if (_dateYear.length >= 4) _dateYear = '';
+          _dateYear += digit;
       }
     });
   }
@@ -228,7 +227,7 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
     } else {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Yazma işlemi başarısız. Bağlantıyı kontrol edin.'),
           backgroundColor: CalColors.error,
           behavior: SnackBarBehavior.floating,
@@ -246,10 +245,10 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: CalColors.primary),
+          icon: Icon(Icons.arrow_back, color: CalColors.primary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Parametre Düzenle',
           style: TextStyle(color: CalColors.primary, fontWeight: FontWeight.w700, fontSize: 18),
         ),
@@ -366,21 +365,26 @@ class _ParamInfoCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Parametre',
-                style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, fontWeight: FontWeight.w500, letterSpacing: 0.8),
+              Expanded(
+                child: Text(
+                  'Parametre',
+                  style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, fontWeight: FontWeight.w500, letterSpacing: 0.8),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(color: CalColors.tertiaryFixed, borderRadius: BorderRadius.circular(4)),
-                child: Text(_sectionTag, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: CalColors.tertiary)),
+                child: Text(_sectionTag, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: CalColors.onTertiaryFixed)),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             _labelWithFormat,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: CalColors.primary),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: CalColors.primary),
           ),
           const SizedBox(height: 12),
           Container(
@@ -394,24 +398,30 @@ class _ParamInfoCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Mevcut Değer', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
+                Text('Mevcut Değer', style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
                 const SizedBox(height: 4),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text(
-                      currentDisplay,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: CalColors.onSurface,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          currentDisplay,
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            color: CalColors.onSurface,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
                       ),
                     ),
                     if (parameter.unit.isNotEmpty) ...[
                       const SizedBox(width: 6),
-                      Text(parameter.unit, style: const TextStyle(fontSize: 14, color: CalColors.onSurfaceVariant)),
+                      Text(parameter.unit, style: TextStyle(fontSize: 14, color: CalColors.onSurfaceVariant)),
                     ],
                   ],
                 ),
@@ -504,12 +514,12 @@ class _DateInput extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.error_outline, size: 16, color: CalColors.error),
+              Icon(Icons.error_outline, size: 16, color: CalColors.error),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   validationError!,
-                  style: const TextStyle(fontSize: 12, color: CalColors.error, fontWeight: FontWeight.w500),
+                  style: TextStyle(fontSize: 12, color: CalColors.error, fontWeight: FontWeight.w500),
                 ),
               ),
             ],
@@ -629,7 +639,7 @@ class _ToggleInput extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Durum', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
+              Text('Durum', style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(
                 value ? 'ENABLED' : 'DISABLED',
@@ -690,7 +700,7 @@ class _SyncNowInput extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Gönderilecek: ${_format(syncedValue!)}',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface),
             ),
           ],
         ],
@@ -728,8 +738,18 @@ class _SelectInput extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(opt, style: TextStyle(fontSize: 15, color: isSelected ? CalColors.primary : CalColors.onSurface, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400)),
-                  if (isSelected) const Icon(Icons.check, color: CalColors.primary, size: 20),
+                  Expanded(
+                    child: Text(
+                      opt,
+                      style: TextStyle(fontSize: 15, color: isSelected ? CalColors.primary : CalColors.onSurface, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                  if (isSelected) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.check, color: CalColors.primary, size: 20),
+                  ],
                 ],
               ),
             ),
@@ -787,7 +807,7 @@ class _TextNumberInput extends StatelessWidget {
                 ),
               ),
               if (unit.isNotEmpty)
-                Text(unit, style: const TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant)),
+                Text(unit, style: TextStyle(fontSize: 13, color: CalColors.onSurfaceVariant)),
             ],
           ),
         ),
@@ -795,12 +815,12 @@ class _TextNumberInput extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.error_outline, size: 16, color: CalColors.error),
+              Icon(Icons.error_outline, size: 16, color: CalColors.error),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   validationError!,
-                  style: const TextStyle(fontSize: 12, color: CalColors.error, fontWeight: FontWeight.w500),
+                  style: TextStyle(fontSize: 12, color: CalColors.error, fontWeight: FontWeight.w500),
                 ),
               ),
             ],
@@ -824,7 +844,9 @@ class _NumericKeypad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
+    // Ondalık nokta yok — tüm ParamType.number alanları tam sayı zorunlu
+    // (bkz. ParameterValidator._integerPattern, SPRINT_BACKLOG.md O15).
+    final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', null, '0', '⌫'];
     return GridView.count(
       crossAxisCount: 3,
       shrinkWrap: true,
@@ -833,6 +855,7 @@ class _NumericKeypad extends StatelessWidget {
       crossAxisSpacing: 8,
       childAspectRatio: 2.2,
       children: keys.map((k) {
+        if (k == null) return const SizedBox.shrink();
         if (k == '⌫') return _KeyBtn(label: k, onTap: onBackspace, isDestructive: true);
         return _KeyBtn(label: k, onTap: () => onAppend(k));
       }).toList(),
@@ -875,7 +898,7 @@ class _TextKeypad extends StatelessWidget {
                           border: Border.all(color: CalColors.outlineVariant),
                         ),
                         alignment: Alignment.center,
-                        child: Text(k, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CalColors.onSurface)),
+                        child: Text(k, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CalColors.onSurface)),
                       ),
                     ),
                   ),
@@ -895,7 +918,7 @@ class _TextKeypad extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(color: CalColors.surfaceLow, borderRadius: BorderRadius.circular(8), border: Border.all(color: CalColors.outlineVariant)),
                   alignment: Alignment.center,
-                  child: const Text('Boşluk', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
+                  child: Text('Boşluk', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
                 ),
               ),
             ),
@@ -909,7 +932,7 @@ class _TextKeypad extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(color: CalColors.surfaceLow, borderRadius: BorderRadius.circular(8), border: Border.all(color: CalColors.outlineVariant)),
                   alignment: Alignment.center,
-                  child: const Icon(Icons.backspace_outlined, color: CalColors.primary, size: 20),
+                  child: Icon(Icons.backspace_outlined, color: CalColors.primary, size: 20),
                 ),
               ),
             ),
@@ -979,9 +1002,9 @@ class _TechNote extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, color: CalColors.accent, size: 18),
+          Icon(Icons.info_outline, color: CalColors.accent, size: 18),
           const SizedBox(width: 10),
-          Expanded(child: Text(_note, style: const TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant, height: 1.4))),
+          Expanded(child: Text(_note, style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant, height: 1.4))),
         ],
       ),
     );
@@ -999,7 +1022,7 @@ class _ActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: CalColors.surfaceLowest,
         border: Border(top: BorderSide(color: CalColors.outlineVariant)),
       ),
@@ -1030,10 +1053,10 @@ class _ActionBar extends StatelessWidget {
             child: OutlinedButton(
               onPressed: onCancel,
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: CalColors.outlineVariant, width: 2),
+                side: BorderSide(color: CalColors.outlineVariant, width: 2),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('İptal', style: TextStyle(fontSize: 15, color: CalColors.onSurfaceVariant)),
+              child: Text('İptal', style: TextStyle(fontSize: 15, color: CalColors.onSurfaceVariant)),
             ),
           ),
         ],

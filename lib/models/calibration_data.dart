@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import '../core/app_theme.dart';
 
 // ──────────────────────────────────────────────
 // Colors (Material Design 3 – TachoCal palette)
 // ──────────────────────────────────────────────
-class CalColors {
+// Not `static const` — each field is a getter that picks the light or dark
+// tone based on AppTheme.instance.isDark, so the whole Servis UI (which
+// reads CalColors.* directly instead of Theme.of(context)) can support a
+// dark theme without every call site needing to know about brightness.
+class _CalColorsLight {
   static const primary = Color(0xFF00475E);
   static const primaryContainer = Color(0xFF1A5F7A);
   static const onPrimary = Color(0xFFFFFFFF);
@@ -29,6 +34,68 @@ class CalColors {
   static const onErrorContainer = Color(0xFF93000A);
   static const secondaryContainer = Color(0xFFD6E2E6);
   static const onSecondaryContainer = Color(0xFF596568);
+}
+
+class _CalColorsDark {
+  static const primary = Color(0xFF3D96C4);
+  static const primaryContainer = Color(0xFF1C5570);
+  static const onPrimary = Color(0xFFFFFFFF);
+  static const background = Color(0xFF0F151B);
+  static const surface = Color(0xFF0F151B);
+  static const onSurface = Color(0xFFE7ECF2);
+  static const onSurfaceVariant = Color(0xFFA9B4BF);
+  static const outline = Color(0xFF6B7580);
+  static const outlineVariant = Color(0xFF323C46);
+  static const surfaceLowest = Color(0xFF19222B);
+  static const surfaceLow = Color(0xFF1E2830);
+  static const surfaceContainer = Color(0xFF243039);
+  static const surfaceHigh = Color(0xFF2B3843);
+  static const surfaceHighest = Color(0xFF33414D);
+  static const tertiary = Color(0xFF5ED4C4);
+  static const tertiaryContainer = Color(0xFF0F3A34);
+  static const onTertiaryContainer = Color(0xFF8FF0E0);
+  static const tertiaryFixed = Color(0xFF89F5E5);
+  static const tertiaryFixedDim = Color(0xFF6CD8C9);
+  static const accent = Color(0xFF6BDCC9);
+  static const error = Color(0xFFFF7A7A);
+  static const errorContainer = Color(0xFF5C1A1A);
+  static const onErrorContainer = Color(0xFFFFDAD6);
+  static const secondaryContainer = Color(0xFF2C3A40);
+  static const onSecondaryContainer = Color(0xFFC2D0D6);
+}
+
+class CalColors {
+  static bool get _dark => AppTheme.instance.isDark;
+
+  static Color get primary => _dark ? _CalColorsDark.primary : _CalColorsLight.primary;
+  static Color get primaryContainer => _dark ? _CalColorsDark.primaryContainer : _CalColorsLight.primaryContainer;
+  static Color get onPrimary => _dark ? _CalColorsDark.onPrimary : _CalColorsLight.onPrimary;
+  static Color get background => _dark ? _CalColorsDark.background : _CalColorsLight.background;
+  static Color get surface => _dark ? _CalColorsDark.surface : _CalColorsLight.surface;
+  static Color get onSurface => _dark ? _CalColorsDark.onSurface : _CalColorsLight.onSurface;
+  static Color get onSurfaceVariant => _dark ? _CalColorsDark.onSurfaceVariant : _CalColorsLight.onSurfaceVariant;
+  static Color get outline => _dark ? _CalColorsDark.outline : _CalColorsLight.outline;
+  static Color get outlineVariant => _dark ? _CalColorsDark.outlineVariant : _CalColorsLight.outlineVariant;
+  static Color get surfaceLowest => _dark ? _CalColorsDark.surfaceLowest : _CalColorsLight.surfaceLowest;
+  static Color get surfaceLow => _dark ? _CalColorsDark.surfaceLow : _CalColorsLight.surfaceLow;
+  static Color get surfaceContainer => _dark ? _CalColorsDark.surfaceContainer : _CalColorsLight.surfaceContainer;
+  static Color get surfaceHigh => _dark ? _CalColorsDark.surfaceHigh : _CalColorsLight.surfaceHigh;
+  static Color get surfaceHighest => _dark ? _CalColorsDark.surfaceHighest : _CalColorsLight.surfaceHighest;
+  static Color get tertiary => _dark ? _CalColorsDark.tertiary : _CalColorsLight.tertiary;
+  static Color get tertiaryContainer => _dark ? _CalColorsDark.tertiaryContainer : _CalColorsLight.tertiaryContainer;
+  static Color get onTertiaryContainer => _dark ? _CalColorsDark.onTertiaryContainer : _CalColorsLight.onTertiaryContainer;
+  static Color get tertiaryFixed => _dark ? _CalColorsDark.tertiaryFixed : _CalColorsLight.tertiaryFixed;
+  static Color get tertiaryFixedDim => _dark ? _CalColorsDark.tertiaryFixedDim : _CalColorsLight.tertiaryFixedDim;
+  // Pairs with tertiaryFixed/tertiaryFixedDim, which stay the same bright
+  // mint in both themes (M3 "Fixed" roles) — so the text/icon drawn on top
+  // of them must stay fixed too, or it goes low-contrast in dark mode.
+  static const onTertiaryFixed = Color(0xFF004A43);
+  static Color get accent => _dark ? _CalColorsDark.accent : _CalColorsLight.accent;
+  static Color get error => _dark ? _CalColorsDark.error : _CalColorsLight.error;
+  static Color get errorContainer => _dark ? _CalColorsDark.errorContainer : _CalColorsLight.errorContainer;
+  static Color get onErrorContainer => _dark ? _CalColorsDark.onErrorContainer : _CalColorsLight.onErrorContainer;
+  static Color get secondaryContainer => _dark ? _CalColorsDark.secondaryContainer : _CalColorsLight.secondaryContainer;
+  static Color get onSecondaryContainer => _dark ? _CalColorsDark.onSecondaryContainer : _CalColorsLight.onSecondaryContainer;
 }
 
 // ──────────────────────────────────────────────
@@ -121,7 +188,7 @@ List<DtcCode> defaultDtcCodes() => [];
 // ──────────────────────────────────────────────
 // Component Tests
 // ──────────────────────────────────────────────
-enum TestStatus { idle, running, passed, failed }
+enum TestStatus { idle, running, passed, failed, unsupported }
 
 class ComponentTest {
   final String id;
@@ -232,6 +299,47 @@ class OptionalSettings {
   String? gnssAntenna;    // 'İç' | 'Dış'
   bool? periodicDags;
   bool? cardExistenceWarning;
+
+  // Ortak — Sprint 5
+  String? languageChange;      // 'Karttan' | 'Kart ve Manuel'
+  String? overspeedOutput;     // 'Devre Dışı' | 'Ekran' | 'Buzzer' | 'Çıkış' | 'Tümü'
+  bool? buzzerOverspeedControl;
+  bool? overspeedTco1;
+  String? tco1HandlingInfo;    // 'Yok' | 'Kart' | 'Kağıt' | 'Kart ve Kağıt'
+  int? canASyncJump;
+  int? canCSyncJump;
+  bool? canAOnOff;
+  bool? canCOnOff;
+  int? cardExpiryControl;
+  int? cardExpiryDriver;
+  int? cardExpiryWorkshop;
+  int? cardExpiryCompany;
+  int? cardExpiryCalibration;
+
+  // STC8250 only — Sprint 5
+  int? canCTco1;
+  int? backlightLevel;
+  String? backlightBattery;    // '24V' | '12V'
+  bool? outputShaftSpeedEnable;
+  int? canASample;
+  int? canCSample;
+  String? imsCanPgn;           // 'PGN 65215' | 'PGN 65256'
+
+  // STC8255 only — Sprint 5
+  bool? nProfileRegistry;
+  List<int>? nSpeedProfiles;
+  bool? vProfileRegistry;
+  List<int>? vSpeedProfiles;
+  int? nFactor;
+  bool? d1Enable;
+  bool? d2Enable;
+  String? engineSpeedSource;   // 'Devre Dışı' | 'CAN-A' | 'CAN-C' | 'C3 Rev'
+  int? canProtocolP1;
+  int? canProtocolP2;
+  bool? canATermination;
+  bool? canCTermination;
+  int? rddwInSleep;
+  bool? dagsBuzzerControl;
 
   OptionalSettings();
 }
