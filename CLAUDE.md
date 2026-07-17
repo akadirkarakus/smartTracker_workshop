@@ -17,15 +17,9 @@ flutter build ios                    # iOS release build
 
 ## Architecture
 
-This is a Flutter tachograph (digital speed recorder) app targeting iOS and Android, written in Turkish. Entry point: `lib/main.dart` → `RoleSelectionScreen`.
+This is a Flutter tachograph (digital speed recorder) app targeting iOS and Android, written in Turkish. Entry point: `lib/main.dart` → `CalibrationScreen` (Servis dashboard) directly — there is no role-selection step.
 
-### Role-based navigation
-
-Two roles are selected at launch:
-- **Şoför (Driver)** → `MonitorScreen` — real-time dashboard fed by `TachographSimulator`
-- **Servis (Service technician)** → `CalibrationScreen` — multi-tab calibration tool with PIN auth
-
-> **Scope decision:** Active development going forward is scoped to the **Servis** side only (`CalibrationScreen` and everything under it — K-Line/Bluetooth, calibration tabs, diagnostics, reports, settings). The **Şoför** side (`MonitorScreen`, `TachographSimulator`) is frozen — do not propose or implement changes there unless the user explicitly asks for driver-side work.
+> **Scope decision:** The app is Servis-only now. The role-selection screen and the Şoför entry point were removed; `MonitorScreen`/`TachographSimulator` (driver side) remain in the tree but are unreachable from the UI and frozen — do not propose or implement changes there unless the user explicitly asks for driver-side work.
 
 ### Layer structure
 

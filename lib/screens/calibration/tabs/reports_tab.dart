@@ -5,6 +5,12 @@ import 'package:printing/printing.dart';
 import '../../../models/calibration_data.dart';
 import '../report_pdf.dart';
 
+const double _kCardRadius = 14;
+
+String _formatDateTime(DateTime dt) =>
+    '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+    '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
 class ReportsTab extends StatefulWidget {
   final List<CalParam> params;
   final List<ComponentTest> tests;
@@ -13,6 +19,7 @@ class ReportsTab extends StatefulWidget {
   final String? firmwareVersion;
   final String? hwVersion;
   final String? workshopName;
+  final bool isDeviceConnected;
 
   const ReportsTab({
     super.key,
@@ -23,6 +30,7 @@ class ReportsTab extends StatefulWidget {
     this.firmwareVersion,
     this.hwVersion,
     this.workshopName,
+    this.isDeviceConnected = false,
   });
 
   @override
@@ -61,6 +69,18 @@ class _ReportsTabState extends State<ReportsTab> {
       'Son. Kal. Tarihi': val('next_cal_date'),
     };
   }
+
+  static const _paramIcons = <String, IconData>{
+    'Plaka (VRN)': Icons.directions_car_filled_outlined,
+    'VIN': Icons.qr_code_outlined,
+    'Hız Limiti': Icons.speed,
+    'Kilometre': Icons.route,
+    'Lastik Boyutu': Icons.tire_repair,
+    'Lastik Çevresi': Icons.all_out,
+    'K-Sabiti': Icons.functions,
+    'W-Sabiti': Icons.calculate_outlined,
+    'Son. Kal. Tarihi': Icons.event_outlined,
+  };
 
   Future<Uint8List> _buildPdf() {
     final hasFailure = widget.tests.any((t) => t.status == TestStatus.failed);
@@ -118,97 +138,114 @@ class _ReportsTabState extends State<ReportsTab> {
     final values = _paramValues();
     final hasFailure = tests.any((t) => t.status == TestStatus.failed);
     final anyTestRan = tests.any((t) => t.status != TestStatus.idle);
+    final dateStr = _formatDateTime(DateTime.now());
+
+    final connected = widget.isDeviceConnected;
+    final deviceServiceItems = [
+      if (connected) ...[
+        _GridItem('Takograf', widget.deviceModel ?? '—', icon: Icons.memory_outlined),
+        _GridItem('Seri No', widget.serialNumber ?? '—', icon: Icons.confirmation_number_outlined),
+        _GridItem('Firmware', widget.firmwareVersion ?? '—', icon: Icons.system_update_outlined),
+        _GridItem('Donanım Rev.', widget.hwVersion ?? '—', icon: Icons.developer_board),
+      ],
+      _GridItem('Servis', widget.workshopName ?? '—', icon: Icons.business_outlined),
+      _GridItem('Rapor Tarihi', dateStr, icon: Icons.event_outlined),
+    ];
+
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Summary header
-                _ReportSummaryCard(plate: values['Plaka (VRN)']!, hasFailure: hasFailure, anyTestRan: anyTestRan),
-                const SizedBox(height: 14),
-
-                // Calibration parameters
-                _SectionHeader(title: 'Kalibrasyon Parametreleri', icon: Icons.settings_input_component),
-                const SizedBox(height: 8),
-                _ParamGrid(items: [
-                  for (final e in values.entries) _GridItem(e.key, e.value),
-                ]),
-                const SizedBox(height: 14),
-
-                // Test results
-                _SectionHeader(title: 'Test Sonuçları', icon: Icons.fact_check_outlined),
-                const SizedBox(height: 8),
-                _TestResultsCard(tests: tests),
-                const SizedBox(height: 14),
-
-                // Hardware & workshop info (in a row)
-                Row(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _HardwareCard(
-                      deviceModel: widget.deviceModel,
-                      serialNumber: widget.serialNumber,
-                      firmwareVersion: widget.firmwareVersion,
-                      hwVersion: widget.hwVersion,
-                    )),
-                    const SizedBox(width: 12),
-                    Expanded(child: _WorkshopCard(workshopName: widget.workshopName)),
+                    // Summary header
+                    _ReportSummaryCard(plate: values['Plaka (VRN)']!, hasFailure: hasFailure, anyTestRan: anyTestRan, dateStr: dateStr),
+                    const SizedBox(height: 16),
+
+                    if (!connected) ...[
+                      _DisconnectedNotice(),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Calibration parameters — only meaningful once read from the device
+                    if (connected) ...[
+                      _SectionHeader(title: 'Kalibrasyon Parametreleri', icon: Icons.settings_input_component),
+                      const SizedBox(height: 10),
+                      _InfoGrid(
+                        maxColumns: 3,
+                        items: [for (final e in values.entries) _GridItem(e.key, e.value, icon: _paramIcons[e.key])],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Test results
+                    _SectionHeader(title: 'Test Sonuçları', icon: Icons.fact_check_outlined),
+                    const SizedBox(height: 10),
+                    _TestResultsCard(tests: tests),
+                    const SizedBox(height: 16),
+
+                    // Device & workshop info — single symmetric grid
+                    _SectionHeader(title: connected ? 'Cihaz ve Servis Bilgileri' : 'Servis Bilgileri', icon: Icons.engineering_outlined),
+                    const SizedBox(height: 10),
+                    _InfoGrid(maxColumns: 2, items: deviceServiceItems),
+                    const SizedBox(height: 16),
+
+                    // Operator notes
+                    _SectionHeader(title: 'Operatör Notları', icon: Icons.description_outlined),
+                    const SizedBox(height: 10),
+                    _OperatorNotes(controller: _notesController),
+                    const SizedBox(height: 22),
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              onPressed: _isExporting ? null : _exportPdf,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: CalColors.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_kCardRadius)),
+                                elevation: 0,
+                              ),
+                              icon: _isExporting
+                                  ? const SizedBox(
+                                      width: 16, height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.picture_as_pdf, size: 18),
+                              label: const Text('PDF Dışa Aktar', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: SizedBox(
+                            height: 50,
+                            child: OutlinedButton.icon(
+                              onPressed: _isExporting ? null : _printPdf,
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: CalColors.primary, width: 2),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_kCardRadius)),
+                              ),
+                              icon: Icon(Icons.print, size: 18, color: CalColors.primary),
+                              label: Text('Yazdır', style: TextStyle(color: CalColors.primary, fontSize: 14, fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
-                const SizedBox(height: 14),
-
-                // Operator notes
-                _SectionHeader(title: 'Operatör Notları', icon: Icons.description_outlined),
-                const SizedBox(height: 8),
-                _OperatorNotes(controller: _notesController),
-                const SizedBox(height: 20),
-
-                // Action buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed: _isExporting ? null : _exportPdf,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: CalColors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            elevation: 0,
-                          ),
-                          icon: _isExporting
-                              ? const SizedBox(
-                                  width: 16, height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.picture_as_pdf, size: 18),
-                          label: const Text('PDF Dışa Aktar', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SizedBox(
-                        height: 50,
-                        child: OutlinedButton.icon(
-                          onPressed: _isExporting ? null : _printPdf,
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: CalColors.primary, width: 2),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          icon: Icon(Icons.print, size: 18, color: CalColors.primary),
-                          label: Text('Yazdır', style: TextStyle(color: CalColors.primary, fontSize: 14, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
           ),
         ),
@@ -223,15 +260,12 @@ class _ReportSummaryCard extends StatelessWidget {
   final String plate;
   final bool hasFailure;
   final bool anyTestRan;
+  final String dateStr;
 
-  const _ReportSummaryCard({required this.plate, required this.hasFailure, required this.anyTestRan});
+  const _ReportSummaryCard({required this.plate, required this.hasFailure, required this.anyTestRan, required this.dateStr});
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} '
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-
     final Color badgeColor;
     final IconData badgeIcon;
     final String badgeLabel;
@@ -253,24 +287,34 @@ class _ReportSummaryCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CalColors.surfaceLowest,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(_kCardRadius),
         border: Border.all(color: CalColors.outlineVariant),
       ),
       child: Row(
         children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: CalColors.primary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.directions_car_filled_outlined, color: CalColors.onPrimary, size: 22),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(plate, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
-                const SizedBox(height: 4),
+                Text(plate, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: CalColors.onSurface, fontFeatures: [FontFeature.tabularFigures()]), overflow: TextOverflow.ellipsis, maxLines: 1),
+                const SizedBox(height: 3),
                 Row(
                   children: [
-                    Icon(Icons.calendar_today, size: 13, color: CalColors.onSurfaceVariant),
+                    Icon(Icons.calendar_today, size: 12, color: CalColors.onSurfaceVariant),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        'Oluşturuldu: $dateStr',
+                        dateStr,
                         style: TextStyle(fontSize: 12, color: CalColors.onSurfaceVariant),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
@@ -281,14 +325,16 @@ class _ReportSummaryCard extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(20)),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(badgeIcon, color: Colors.white, size: 16),
+                Icon(badgeIcon, color: Colors.white, size: 15),
                 const SizedBox(width: 4),
-                Text(badgeLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                Text(badgeLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
               ],
             ),
           ),
@@ -308,10 +354,43 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: CalColors.primary, size: 20),
-        const SizedBox(width: 8),
-        Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CalColors.primary)),
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: CalColors.primary,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: CalColors.onPrimary, size: 15),
+        ),
+        const SizedBox(width: 10),
+        Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: CalColors.onSurface, letterSpacing: 0.1)),
       ],
+    );
+  }
+}
+
+class _DisconnectedNotice extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: CalColors.secondaryContainer,
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        border: Border.all(color: CalColors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.bluetooth_disabled, color: CalColors.onSecondaryContainer, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Bluetooth bağlı değil — kalibrasyon parametreleri ve cihaz bilgileri cihaza bağlanınca görünür.',
+              style: TextStyle(fontSize: 12.5, color: CalColors.onSecondaryContainer, height: 1.3),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -319,41 +398,110 @@ class _SectionHeader extends StatelessWidget {
 class _GridItem {
   final String label;
   final String value;
+  final IconData? icon;
 
-  const _GridItem(this.label, this.value);
+  const _GridItem(this.label, this.value, {this.icon});
 }
 
-class _ParamGrid extends StatelessWidget {
+/// A symmetric label/value grid: every cell is exactly 1/columns wide and
+/// rows are separated by dividers, so the block never reads as lopsided
+/// regardless of how many items it holds. `maxColumns` is reduced
+/// automatically on narrow screens to keep values legible.
+class _InfoGrid extends StatelessWidget {
   final List<_GridItem> items;
+  final int maxColumns;
 
-  const _ParamGrid({required this.items});
+  const _InfoGrid({required this.items, this.maxColumns = 2});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: CalColors.surfaceLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CalColors.outlineVariant),
-      ),
-      child: Wrap(
-        spacing: 20,
-        runSpacing: 14,
-        children: items.map((item) {
-          return SizedBox(
-            width: (MediaQuery.of(context).size.width - 80) / 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.label, style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant)),
-                const SizedBox(height: 2),
-                Text(item.value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()])),
+    return LayoutBuilder(builder: (context, constraints) {
+      const minCellWidth = 130.0;
+      var columns = maxColumns;
+      while (columns > 1 && constraints.maxWidth / columns < minCellWidth) {
+        columns--;
+      }
+
+      final rows = <List<_GridItem?>>[];
+      for (var i = 0; i < items.length; i += columns) {
+        rows.add(List.generate(columns, (c) => i + c < items.length ? items[i + c] : null));
+      }
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: CalColors.surfaceLowest,
+          borderRadius: BorderRadius.circular(_kCardRadius),
+          border: Border.all(color: CalColors.outlineVariant),
+        ),
+        child: Column(
+          children: [
+            for (var r = 0; r < rows.length; r++) ...[
+              if (r > 0) ...[
+                const SizedBox(height: 14),
+                Divider(height: 1, color: CalColors.outlineVariant),
+                const SizedBox(height: 14),
               ],
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var c = 0; c < columns; c++) ...[
+                      if (c > 0) ...[
+                        const SizedBox(width: 14),
+                        VerticalDivider(width: 1, color: CalColors.outlineVariant),
+                        const SizedBox(width: 14),
+                      ],
+                      Expanded(
+                        child: rows[r][c] == null ? const SizedBox.shrink() : _InfoCell(item: rows[r][c]!),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+}
+
+class _InfoCell extends StatelessWidget {
+  final _GridItem item;
+
+  const _InfoCell({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Row(
+          children: [
+            if (item.icon != null) ...[
+              Icon(item.icon, size: 12, color: CalColors.onSurfaceVariant),
+              const SizedBox(width: 4),
+            ],
+            Flexible(
+              child: Text(
+                item.label,
+                style: TextStyle(fontSize: 11, color: CalColors.onSurfaceVariant, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
-          );
-        }).toList(),
-      ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          item.value,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: CalColors.primary, fontFeatures: [FontFeature.tabularFigures()]),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ],
     );
   }
 }
@@ -389,12 +537,12 @@ class _TestResultsCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: CalColors.surfaceLowest,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(_kCardRadius),
         border: Border.all(color: CalColors.outlineVariant),
       ),
       child: doneTests.isEmpty
           ? Padding(
-              padding: EdgeInsets.all(20),
+              padding: const EdgeInsets.all(20),
               child: Text('Henüz test çalıştırılmadı. Tanılama sekmesinden testleri başlatın.', style: TextStyle(color: CalColors.onSurfaceVariant, fontSize: 13), textAlign: TextAlign.center),
             )
           : Column(
@@ -429,102 +577,6 @@ class _TestResultsCard extends StatelessWidget {
   }
 }
 
-class _HardwareCard extends StatelessWidget {
-  final String? deviceModel;
-  final String? serialNumber;
-  final String? firmwareVersion;
-  final String? hwVersion;
-
-  const _HardwareCard({
-    this.deviceModel,
-    this.serialNumber,
-    this.firmwareVersion,
-    this.hwVersion,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: CalColors.surfaceLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CalColors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.engineering_outlined, color: CalColors.primary, size: 18),
-              SizedBox(width: 6),
-              Text('Donanım', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.primary)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _HwRow('Takograf', deviceModel ?? '—'),
-          _HwRow('Seri No', serialNumber ?? '—'),
-          _HwRow('FW', firmwareVersion ?? '—'),
-          _HwRow('HW Rev', hwVersion ?? '—'),
-        ],
-      ),
-    );
-  }
-}
-
-class _WorkshopCard extends StatelessWidget {
-  final String? workshopName;
-
-  const _WorkshopCard({this.workshopName});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: CalColors.surfaceLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CalColors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.business_outlined, color: CalColors.primary, size: 18),
-              SizedBox(width: 6),
-              Text('Servis', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CalColors.primary)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _HwRow('Servis', workshopName ?? '—'),
-        ],
-      ),
-    );
-  }
-}
-
-class _HwRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _HwRow(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(fontSize: 10, color: CalColors.onSurfaceVariant)),
-          Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CalColors.onSurface)),
-        ],
-      ),
-    );
-  }
-}
-
 class _OperatorNotes extends StatelessWidget {
   final TextEditingController controller;
 
@@ -536,7 +588,7 @@ class _OperatorNotes extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CalColors.surfaceLowest,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(_kCardRadius),
         border: Border.all(color: CalColors.outlineVariant),
       ),
       child: Container(

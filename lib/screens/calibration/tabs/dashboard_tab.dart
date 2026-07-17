@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../../bluetooth/models/ble_device_result.dart';
+import '../../../bluetooth/repositories/ble_connection_repository.dart';
 import '../../../kline/kline_service.dart';
 import '../../../models/calibration_data.dart';
+import '../../ble_terminal_screen.dart';
 import '../pin_entry_screen.dart';
 import '../motion_sensor_pairing_screen.dart';
 import '../w_constant_measurement_screen.dart';
@@ -17,6 +19,7 @@ class DashboardTab extends StatelessWidget {
   final List<DtcCode> dtcCodes;
   final Future<bool> Function(String paramId, String value)? onWriteParam;
   final BleDeviceResult? connectedDevice;
+  final BleConnectionRepository? btRepository;
   final VoidCallback onConnectDevice;
   final VoidCallback onDisconnectDevice;
   final KLineService? klineService;
@@ -41,6 +44,7 @@ class DashboardTab extends StatelessWidget {
     required this.connectedDevice,
     required this.onConnectDevice,
     required this.onDisconnectDevice,
+    this.btRepository,
     this.onWriteParam,
     this.klineService,
     this.bleManufacturer,
@@ -122,6 +126,20 @@ class DashboardTab extends StatelessWidget {
     );
   }
 
+  void _openTerminal(BuildContext context) {
+    if (connectedDevice == null || btRepository == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BleTerminalScreen(
+          device: connectedDevice!,
+          repository: btRepository!,
+          ownsConnection: false,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isConnected = connectedDevice != null;
@@ -139,6 +157,7 @@ class DashboardTab extends StatelessWidget {
                   connectedDevice: connectedDevice,
                   onConnect: onConnectDevice,
                   onDisconnect: onDisconnectDevice,
+                  onOpenTerminal: btRepository != null ? () => _openTerminal(context) : null,
                 ),
                 const SizedBox(height: 12),
 
@@ -296,11 +315,13 @@ class _BluetoothConnectCard extends StatelessWidget {
   final BleDeviceResult? connectedDevice;
   final VoidCallback onConnect;
   final VoidCallback onDisconnect;
+  final VoidCallback? onOpenTerminal;
 
   const _BluetoothConnectCard({
     required this.connectedDevice,
     required this.onConnect,
     required this.onDisconnect,
+    this.onOpenTerminal,
   });
 
   @override
@@ -355,6 +376,7 @@ class _BluetoothConnectCard extends StatelessWidget {
             device: connectedDevice!,
             isSimulated: isSimulated,
             onDisconnect: onDisconnect,
+            onOpenTerminal: onOpenTerminal,
           ),
         ),
       ),
@@ -450,12 +472,14 @@ class _ConnectedCardRow extends StatelessWidget {
   final BleDeviceResult device;
   final bool isSimulated;
   final VoidCallback onDisconnect;
+  final VoidCallback? onOpenTerminal;
 
   const _ConnectedCardRow({
     super.key,
     required this.device,
     required this.isSimulated,
     required this.onDisconnect,
+    this.onOpenTerminal,
   });
 
   @override
@@ -512,6 +536,21 @@ class _ConnectedCardRow extends StatelessWidget {
             ],
           ),
         ),
+        if (onOpenTerminal != null) ...[
+          IconButton(
+            onPressed: onOpenTerminal,
+            tooltip: 'Terminal',
+            icon: const Icon(Icons.terminal, color: Colors.white, size: 20),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              padding: const EdgeInsets.all(8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
         TextButton(
           onPressed: onDisconnect,
           style: TextButton.styleFrom(

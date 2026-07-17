@@ -244,6 +244,40 @@ class RecentReport {
 
 List<RecentReport> defaultReports() => [];
 
+// Simülasyon modunda bağlanıldığında Ana Sayfa'daki "Son Raporlar" kartını
+// boş göstermemek için kullanılan örnek geçmiş — gerçek cihazda K-Line
+// üzerinden okunan bir kayıt değildir, yalnızca demo/test amaçlıdır.
+List<RecentReport> simulatedReports() => const [
+      RecentReport(
+        vehicleName: 'Mercedes Actros 1845',
+        plate: '34 ABC 123',
+        time: '2 saat önce',
+        isSuccess: true,
+        statusLabel: 'Tamamlandı',
+      ),
+      RecentReport(
+        vehicleName: 'MAN TGX 18.440',
+        plate: '06 DEF 456',
+        time: 'Dün',
+        isSuccess: true,
+        statusLabel: 'Tamamlandı',
+      ),
+      RecentReport(
+        vehicleName: 'Scania R450',
+        plate: '35 GHI 789',
+        time: '2 gün önce',
+        isSuccess: false,
+        statusLabel: 'Hatalı',
+      ),
+      RecentReport(
+        vehicleName: 'Volvo FH16',
+        plate: '16 JKL 012',
+        time: '4 gün önce',
+        isSuccess: true,
+        statusLabel: 'Tamamlandı',
+      ),
+    ];
+
 // ──────────────────────────────────────────────
 // Service Device Settings
 // ──────────────────────────────────────────────

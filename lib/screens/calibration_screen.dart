@@ -334,6 +334,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               _klineService = service;
               // Simülasyon modunda PIN doğrulamasını beklemeye gerek yok — otomatik açık.
               _isPinAuthenticated = device.isSimulated;
+              // Ana Sayfa'daki "Son Raporlar" kartı gerçek cihazdan okunan bir
+              // veri değil (bkz. defaultReports()) — simülasyon modunda boş
+              // görünmemesi için örnek geçmişle doldurulur.
+              _reports
+                ..clear()
+                ..addAll(device.isSimulated ? simulatedReports() : []);
             });
             AppLogger.instance.log(
               'Device connected: ${device.displayName}',
@@ -480,7 +486,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _manualDisconnectInProgress = true;
     _connStateSub?.cancel();
     _connStateSub = null;
-    _klineService?.dispose();
+    await _klineService?.dispose();
     await _btRepo?.dispose();
     if (!mounted) return;
     setState(() {
@@ -502,6 +508,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         p.value = null;
       }
       _dtcCodes.clear();
+      _reports.clear();
       for (final t in _tests) {
         t.status = TestStatus.idle;
         t.progress = 0;
@@ -553,6 +560,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               dtcCodes: _dtcCodes,
               onWriteParam: _klineService != null ? _writeCalParam : null,
               connectedDevice: _connectedDevice,
+              btRepository: _btRepo,
               onConnectDevice: () => _openBleScan(context),
               onDisconnectDevice: _disconnectDevice,
               klineService: _klineService,
@@ -587,6 +595,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               params: _params,
               tests: _tests,
               workshopName: _settings.workshopName,
+              isDeviceConnected: _connectedDevice != null,
+              deviceModel: _deviceHwNumber,
+              firmwareVersion: _deviceSwVersion,
+              serialNumber: _deviceSerial,
+              hwVersion: _deviceHwVersion,
             )),
           ],
         ),

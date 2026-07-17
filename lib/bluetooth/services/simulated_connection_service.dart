@@ -16,6 +16,15 @@ class SimulatedConnectionService implements BleConnectionRepository {
   // ClearDiagnosticInformation sonrası true olur; DTC listesi boşalır.
   bool _dtcsCleared = false;
 
+  // KLineService._write() artık gerçek K-LINE P4min bayt-arası boşluğunu
+  // taklit etmek için her frame'i tek tek writeCharacteristic() çağrılarıyla
+  // (bayt bayt) gönderiyor (bkz. kline_service.dart _write). Bu yüzden burada
+  // tam bir frame gelene kadar baytları biriktirmemiz gerekiyor — eskiden
+  // her writeCharacteristic çağrısının TAM bir frame taşıdığı varsayılıyordu,
+  // bu da bayt-bayt gönderimle birlikte hiçbir yanıt üretilmemesine yol
+  // açıyordu (Kalibrasyon/Cihaz Bilgisi simülasyon modunda hep boş kalıyordu).
+  final List<int> _rxBuffer = [];
+
   @override
   Stream<BleConnectionState> get connectionState => _stateCtrl.stream;
 
@@ -25,6 +34,7 @@ class SimulatedConnectionService implements BleConnectionRepository {
   @override
   Future<void> connect(String deviceId) async {
     _dtcsCleared = false;
+    _rxBuffer.clear();
     _emit(BleConnectionState.connecting);
     _log('Simülasyon bağlantısı başlatılıyor...', LogLevel.info);
     await Future.delayed(const Duration(milliseconds: 400));
@@ -65,15 +75,21 @@ class SimulatedConnectionService implements BleConnectionRepository {
   Future<void> writeCharacteristic(String charUuid, List<int> data) async {
     final hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ').toUpperCase();
     _log(hex, LogLevel.outgoing);
-    await Future.delayed(const Duration(milliseconds: 60));
 
-    if (charUuid == 'SPP_DATA') {
-      final response = _buildKLineResponse(data);
-      if (response != null) {
-        final respHex = response.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ').toUpperCase();
-        _log(respHex, LogLevel.incoming);
-        _sppDataCtrl.add(response);
-      }
+    if (charUuid != 'SPP_DATA') return;
+
+    _rxBuffer.addAll(data);
+    final response = _tryBuildResponse();
+    if (response != null) {
+      // "Cihaz işlem süresi" gecikmesi — artık her bayt ayrı bir
+      // writeCharacteristic() çağrısıyla geldiğinden (bkz. _rxBuffer notu),
+      // yalnızca tam bir frame birikip yanıt üretildiğinde bir kez uygulanır;
+      // her bayt çağrısında uygulanırsa (eskiden olduğu gibi) tek bir okuma
+      // saniyelerce sürer.
+      await Future.delayed(const Duration(milliseconds: 60));
+      final respHex = response.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ').toUpperCase();
+      _log(respHex, LogLevel.incoming);
+      _sppDataCtrl.add(response);
     }
   }
 
@@ -96,25 +112,52 @@ class SimulatedConnectionService implements BleConnectionRepository {
 
   // ── K-LINE frame parser & response builder ───────────────────────────────
 
-  List<int>? _buildKLineResponse(List<int> req) {
-    if (req.isEmpty) return null;
-    final fmt = req[0];
+  // _rxBuffer'da tam bir istek frame'i birikene kadar null döner (bkz.
+  // _rxBuffer alanındaki not — çağıran taraf artık her frame'i bayt bayt
+  // gönderiyor). Tam frame biriktiğinde onu tampondan çıkarır ve yanıtı
+  // üretir; sonraki çağrılar bir sonraki frame'i sıfırdan biriktirir.
+  List<int>? _tryBuildResponse() {
+    if (_rxBuffer.isEmpty) return null;
+    final fmt = _rxBuffer[0];
 
     // Wakeup byte (0x00) — no response
-    if (fmt == 0x00) return null;
+    if (fmt == 0x00) {
+      _rxBuffer.removeAt(0);
+      return null;
+    }
 
-    // Fast-init StartCommunication: 81 EE F0 81 CS
-    if (fmt == 0x81) return _fastInitResp(0x81);
+    // Fast-init StartCommunication: 81 EE F0 81 CS (5 bytes)
+    if (fmt == 0x81) {
+      if (_rxBuffer.length < 5) return null;
+      _rxBuffer.removeRange(0, 5);
+      return _startCommResp();
+    }
 
-    // Standard frame: 80 EE F0 LEN SID DATA... CS
-    if (fmt == 0x80 && req.length >= 5) {
-      final sid  = req[4];
-      final data = req.length > 6 ? req.sublist(5, req.length - 1) : <int>[];
+    // Standard frame: 80 EE F0 LEN SID DATA... CS — LEN, header'ın 4. baytı
+    // gelmeden bilinemez; toplam uzunluk 4 (header) + LEN + 1 (CS) baytıdır.
+    if (fmt == 0x80) {
+      if (_rxBuffer.length < 4) return null;
+      final len = _rxBuffer[3];
+      final total = 4 + len + 1;
+      if (_rxBuffer.length < total) return null;
+      final frame = _rxBuffer.sublist(0, total);
+      _rxBuffer.removeRange(0, total);
+      final sid  = frame[4];
+      final data = frame.length > 6 ? frame.sublist(5, frame.length - 1) : <int>[];
       return _handleSid(sid, data);
     }
 
+    // Unknown/desync byte — gerçek KLineFrameBuffer.tryParse() ile aynı
+    // şekilde tek bayt atıp yeniden senkronize olmayı dener.
+    _rxBuffer.removeAt(0);
     return null;
   }
+
+  // StartCommunication pozitif yanıtı — KLineFrameBuffer.tryParse() artık
+  // TÜM yanıtları standart formatta bekliyor (Regulation (EU) 2016/799,
+  // Annex 1C App.8, Table 6: 80 <tt> EE 03 C1 <KB1> <KB2> <CS>); eski 5
+  // baytlık "C1 EE F0 SID CS" fast-init yanıt formatı artık tanınmıyor.
+  static List<int> _startCommResp() => _stdResp(0xC1, [0x8F, 0xA1]);
 
   List<int>? _handleSid(int sid, List<int> data) {
     switch (sid) {
@@ -357,13 +400,6 @@ class SimulatedConnectionService implements BleConnectionRepository {
   static List<int> _stdResp(int sid, List<int> payload) {
     final len   = 1 + payload.length;
     final frame = [0x80, 0xF0, 0xEE, len, sid, ...payload];
-    final cs    = frame.fold(0, (s, b) => s + b) & 0xFF;
-    return [...frame, cs];
-  }
-
-  // Fast-init response: [0xC1, 0xF0, 0xEE, SID, CS]
-  static List<int> _fastInitResp(int sid) {
-    final frame = [0xC1, 0xF0, 0xEE, sid];
     final cs    = frame.fold(0, (s, b) => s + b) & 0xFF;
     return [...frame, cs];
   }

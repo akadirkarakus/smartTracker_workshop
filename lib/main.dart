@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'screens/role_selection_screen.dart';
+import 'screens/calibration_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   runApp(const TachographApp());
@@ -8,7 +9,7 @@ void main() {
 
 class TachographApp extends StatelessWidget {
   const TachographApp({super.key});
-  
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -31,7 +32,7 @@ class TachographApp extends StatelessWidget {
           },
         ),
       ),
-      home: const RoleSelectionScreen(),
+      home: const SplashScreen(next: CalibrationScreen()),
     );
   }
 }

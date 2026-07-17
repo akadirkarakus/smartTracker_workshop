@@ -10,6 +10,38 @@ import '../w_constant_measurement_screen.dart';
 
 const _refreshAttentionThreshold = Duration(minutes: 1);
 
+// Parametre id'sine göre satırın solunda gösterilecek simge — görsel tarama
+// kolaylığı için (ör. plaka parametresinin solunda plaka simgesi).
+const Map<String, IconData> _paramIcons = {
+  'vrn': Icons.confirmation_number_outlined,
+  'vin': Icons.fingerprint,
+  'member_state': Icons.flag_outlined,
+  'reg_date': Icons.event_outlined,
+  'tyre_size': Icons.tire_repair,
+  'tyre_circ': Icons.trip_origin,
+  'k_constant': Icons.calculate_outlined,
+  'w_constant': Icons.speed,
+  'pproos': Icons.rotate_right,
+  'teeth_count': Icons.settings_outlined,
+  'speed_limit': Icons.speed_outlined,
+  'odometer': Icons.route_outlined,
+  'trip_distance': Icons.map_outlined,
+  'datetime': Icons.access_time,
+  'utc_offset': Icons.public,
+  'heartbeat': Icons.monitor_heart_outlined,
+  'tco1_priority': Icons.low_priority,
+  'tco1_rate': Icons.repeat,
+  'ecu_install_date': Icons.memory,
+  'next_cal_date': Icons.event_repeat,
+  'prewarning_card1': Icons.credit_card,
+  'prewarning_tacho': Icons.dashboard_outlined,
+  'prewarning_cal': Icons.build_circle_outlined,
+  'download_period_vu': Icons.download_outlined,
+  'download_period_card': Icons.sim_card_download_outlined,
+};
+
+IconData _paramIcon(String id) => _paramIcons[id] ?? Icons.tune;
+
 class CalibrationParamsTab extends StatefulWidget {
   final List<CalParam> params;
   final void Function(String id, String value) onParamChanged;
@@ -599,6 +631,16 @@ class _ParamRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: CalColors.primaryContainer.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(_paramIcon(param.id), size: 18, color: CalColors.primary),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

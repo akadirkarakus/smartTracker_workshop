@@ -17,11 +17,17 @@ class BleTerminalScreen extends StatefulWidget {
     required this.device,
     required this.repository,
     this.onConnected,
+    this.ownsConnection = true,
   });
 
   final BleDeviceResult device;
   final BleConnectionRepository repository;
   final void Function(BleDeviceResult, BleConnectionRepository)? onConnected;
+
+  // false when opened from an already-connected screen (ör. Ana Sayfa'daki
+  // "Terminal" butonu): repository başka bir yerin (CalibrationScreen) malı,
+  // burada yeniden connect() edilmez ve kapanışta dispose edilmez.
+  final bool ownsConnection;
 
   @override
   State<BleTerminalScreen> createState() => _BleTerminalScreenState();
@@ -53,8 +59,14 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
         _scrollToBottom();
       }
     });
-    AppLogger.instance.bridgeStream(widget.repository.logs);
-    _connect();
+    if (widget.ownsConnection) {
+      AppLogger.instance.bridgeStream(widget.repository.logs);
+      _connect();
+    } else {
+      // Zaten bağlı — sahibi olan ekran (CalibrationScreen) hem bağlantıyı
+      // kurmuş hem de logs akışını AppLogger'a bridge etmiş durumda.
+      _connState = BleConnectionState.connected;
+    }
   }
 
   @override
@@ -64,7 +76,9 @@ class _BleTerminalScreenState extends State<BleTerminalScreen> {
     _logSub?.cancel();
     _scrollController.dispose();
     _inputController.dispose();
-    if (!_repositoryAdopted) unawaited(widget.repository.dispose());
+    if (widget.ownsConnection && !_repositoryAdopted) {
+      unawaited(widget.repository.dispose());
+    }
     super.dispose();
   }
 
