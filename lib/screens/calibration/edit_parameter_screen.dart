@@ -32,7 +32,14 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
   // dateTime-specific state (only used when type == ParamType.dateTime)
   DateTime? _syncedNow;
 
+  // Tyre-size-specific state (only used when type == ParamType.tyreSize)
+  String _tyreWidth = '';
+  String _tyreAspect = '';
+  String _tyreRim = '';
+  int _tyreFocusField = 0; // 0=width, 1=aspect, 2=rim
+
   bool get _isDate => widget.parameter.type == ParamType.date;
+  bool get _isTyreSize => widget.parameter.type == ParamType.tyreSize;
 
   @override
   void initState() {
@@ -61,6 +68,19 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
       }
       _dateFocusField = 0;
     }
+
+    if (_isTyreSize) {
+      final existing = widget.parameter.value?.trim();
+      final match = existing != null
+          ? RegExp(r'^(\d{2,3})/(\d{2})R(\d{2}(?:\.5)?)$').firstMatch(existing)
+          : null;
+      if (match != null) {
+        _tyreWidth = match.group(1)!;
+        _tyreAspect = match.group(2)!;
+        _tyreRim = match.group(3)!;
+      }
+      _tyreFocusField = 0;
+    }
   }
 
   bool get _isNumericType => widget.parameter.type == ParamType.number;
@@ -86,8 +106,16 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
       final dt = DateTime.tryParse(existing);
       return dt != null ? _formatDateTime(dt) : existing;
     }
+    if (_isTyreSize) {
+      final w = _tyreWidth.isEmpty ? '---' : _tyreWidth;
+      final a = _tyreAspect.isEmpty ? '--' : _tyreAspect;
+      final r = _tyreRim.isEmpty ? '--' : _tyreRim;
+      return '$w/${a}R$r';
+    }
     return _inputValue;
   }
+
+  String get _tyreSizeComposed => '$_tyreWidth/${_tyreAspect}R$_tyreRim';
 
   String get _dateAsIso {
     final y = _dateYear.padLeft(4, '0');
@@ -166,6 +194,65 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
 
   void _setDateFocus(int field) => setState(() => _dateFocusField = field);
 
+  void _onTyreDigit(String ch) {
+    setState(() {
+      _validationError = null;
+      switch (_tyreFocusField) {
+        case 0:
+          if (_tyreWidth.length >= 3) return;
+          _tyreWidth += ch;
+          if (_tyreWidth.length == 3) _tyreFocusField = 1;
+        case 1:
+          if (_tyreAspect.length >= 2) return;
+          _tyreAspect += ch;
+          if (_tyreAspect.length == 2) _tyreFocusField = 2;
+        case 2:
+          if (_tyreRim.length >= 4) return;
+          if (ch == '.' && (_tyreRim.isEmpty || _tyreRim.contains('.'))) return;
+          _tyreRim += ch;
+      }
+    });
+  }
+
+  void _onTyreBackspace() {
+    setState(() {
+      _validationError = null;
+      switch (_tyreFocusField) {
+        case 0:
+          if (_tyreWidth.isNotEmpty) {
+            _tyreWidth = _tyreWidth.substring(0, _tyreWidth.length - 1);
+          }
+        case 1:
+          if (_tyreAspect.isNotEmpty) {
+            _tyreAspect = _tyreAspect.substring(0, _tyreAspect.length - 1);
+          } else {
+            _tyreFocusField = 0;
+            if (_tyreWidth.isNotEmpty) {
+              _tyreWidth = _tyreWidth.substring(0, _tyreWidth.length - 1);
+            }
+          }
+        case 2:
+          if (_tyreRim.isNotEmpty) {
+            _tyreRim = _tyreRim.substring(0, _tyreRim.length - 1);
+          } else {
+            _tyreFocusField = 1;
+            if (_tyreAspect.isNotEmpty) {
+              _tyreAspect = _tyreAspect.substring(0, _tyreAspect.length - 1);
+            }
+          }
+      }
+    });
+  }
+
+  void _setTyreFocus(int field) => setState(() => _tyreFocusField = field);
+
+  String? _validateTyreSizeFields() {
+    if (_tyreWidth.isEmpty || _tyreAspect.isEmpty || _tyreRim.isEmpty) {
+      return 'Lütfen tüm alanları doldurun.';
+    }
+    return null;
+  }
+
   String? _validateDate() {
     if (_dateDay.isEmpty || _dateMonth.isEmpty || _dateYear.isEmpty) {
       return 'Lütfen tüm alanları doldurun.';
@@ -199,6 +286,13 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
       setState(() => _validationError = 'Lütfen önce zamanı senkronize edin.');
       return;
     }
+    if (_isTyreSize) {
+      final error = _validateTyreSizeFields();
+      if (error != null) {
+        setState(() => _validationError = error);
+        return;
+      }
+    }
 
     setState(() => _isSaving = true);
     bool success = true;
@@ -206,7 +300,9 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
         ? _dateAsIso
         : widget.parameter.type == ParamType.dateTime
             ? _syncedNow!.toIso8601String()
-            : _currentDisplay;
+            : _isTyreSize
+                ? _tyreSizeComposed
+                : _currentDisplay;
     if (widget.onWrite != null) {
       try {
         success = await widget.onWrite!(valueToWrite);
@@ -301,6 +397,17 @@ class _EditParameterScreenState extends State<EditParameterScreen> {
                           _syncedNow = DateTime.now();
                         }),
                       )
+                    else if (_isTyreSize)
+                      _TyreSizeInput(
+                        width: _tyreWidth,
+                        aspect: _tyreAspect,
+                        rim: _tyreRim,
+                        focusedField: _tyreFocusField,
+                        onDigit: _onTyreDigit,
+                        onBackspace: _onTyreBackspace,
+                        onFocusField: _setTyreFocus,
+                        validationError: _validationError,
+                      )
                     else
                       _TextNumberInput(
                         value: _inputValue,
@@ -347,6 +454,7 @@ class _ParamInfoCard extends StatelessWidget {
 
   String get _labelWithFormat {
     if (parameter.type == ParamType.date) return '${parameter.label}  g/a/y';
+    if (parameter.type == ParamType.tyreSize) return '${parameter.label}  Genişlik/Profil R Jant';
     return parameter.label;
   }
 
@@ -598,6 +706,193 @@ class _DateKeypad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      childAspectRatio: 2.2,
+      children: keys.map((k) {
+        if (k == '⌫') {
+          return _KeyBtn(label: k, onTap: onBackspace, isDestructive: true);
+        }
+        if (k.isEmpty) return const SizedBox.shrink();
+        return _KeyBtn(label: k, onTap: () => onDigit(k));
+      }).toList(),
+    );
+  }
+}
+
+// ── Tyre Size Input ─────────────────────────────
+
+class _TyreSizeInput extends StatelessWidget {
+  final String width;
+  final String aspect;
+  final String rim;
+  final int focusedField;
+  final void Function(String digit) onDigit;
+  final VoidCallback onBackspace;
+  final void Function(int field) onFocusField;
+  final String? validationError;
+
+  const _TyreSizeInput({
+    required this.width,
+    required this.aspect,
+    required this.rim,
+    required this.focusedField,
+    required this.onDigit,
+    required this.onBackspace,
+    required this.onFocusField,
+    this.validationError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              flex: 3,
+              child: GestureDetector(
+                onTap: () => onFocusField(0),
+                child: _TyreBox(
+                  label: 'Genişlik',
+                  value: width.isEmpty ? '---' : width,
+                  isFocused: focusedField == 0,
+                  hasError: validationError != null,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('/', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: CalColors.outline)),
+            ),
+            Expanded(
+              flex: 2,
+              child: GestureDetector(
+                onTap: () => onFocusField(1),
+                child: _TyreBox(
+                  label: 'Profil',
+                  value: aspect.isEmpty ? '--' : aspect,
+                  isFocused: focusedField == 1,
+                  hasError: validationError != null,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('R', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: CalColors.outline)),
+            ),
+            Expanded(
+              flex: 3,
+              child: GestureDetector(
+                onTap: () => onFocusField(2),
+                child: _TyreBox(
+                  label: 'Jant Çapı',
+                  value: rim.isEmpty ? '--' : rim,
+                  isFocused: focusedField == 2,
+                  hasError: validationError != null,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (validationError != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.error_outline, size: 16, color: CalColors.error),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  validationError!,
+                  style: TextStyle(fontSize: 12, color: CalColors.error, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        _TyreKeypad(focusedField: focusedField, onDigit: onDigit, onBackspace: onBackspace),
+      ],
+    );
+  }
+}
+
+class _TyreBox extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isFocused;
+  final bool hasError;
+
+  const _TyreBox({
+    required this.label,
+    required this.value,
+    required this.isFocused,
+    required this.hasError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = hasError
+        ? CalColors.error
+        : isFocused
+            ? CalColors.primary
+            : CalColors.outlineVariant;
+    final borderWidth = isFocused ? 2.0 : 1.5;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+      decoration: BoxDecoration(
+        color: isFocused ? CalColors.primaryContainer.withValues(alpha: 0.15) : CalColors.surfaceLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor, width: borderWidth),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: isFocused ? CalColors.primary : CalColors.onSurfaceVariant,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: value.contains('-') ? CalColors.outline : (isFocused ? CalColors.primary : CalColors.onSurface),
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TyreKeypad extends StatelessWidget {
+  final int focusedField;
+  final void Function(String) onDigit;
+  final VoidCallback onBackspace;
+
+  const _TyreKeypad({required this.focusedField, required this.onDigit, required this.onBackspace});
+
+  @override
+  Widget build(BuildContext context) {
+    // Jant çapı alanında (örn. 22.5) ondalık nokta gerekebilir; Genişlik ve
+    // Profil alanlarında her zaman tam sayı girilir, o yüzden nokta tuşu
+    // yalnızca Jant Çapı odaklıyken gösterilir.
+    final showDot = focusedField == 2;
+    final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', showDot ? '.' : '', '0', '⌫'];
     return GridView.count(
       crossAxisCount: 3,
       shrinkWrap: true,

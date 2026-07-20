@@ -1,17 +1,24 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'screens/auth/login_screen.dart';
 import 'screens/calibration_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/auth_service.dart';
 
-void main() {
+void main() async
+{
+  WidgetsFlutterBinding.ensureInitialized();
+  await AuthService.instance.init();
   runApp(const TachographApp());
 }
 
-class TachographApp extends StatelessWidget {
+class TachographApp extends StatelessWidget 
+{
   const TachographApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) 
+  {
     return MaterialApp(
       title: 'Takograf İzleme',
       debugShowCheckedModeBanner: false,
@@ -32,7 +39,9 @@ class TachographApp extends StatelessWidget {
           },
         ),
       ),
-      home: const SplashScreen(next: CalibrationScreen()),
+      home: SplashScreen(
+        next: AuthService.instance.isLoggedIn ? const CalibrationScreen() : const LoginScreen(),
+      ),
     );
   }
 }

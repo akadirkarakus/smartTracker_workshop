@@ -40,6 +40,7 @@ dependencies:
   shared_preferences: ^2.3.2
   pdf: ^3.12.0
   printing: ^5.14.3
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:
@@ -66,11 +67,17 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/header_logo_3.png
 
   fonts:
     - family: ITCHighlander
       fonts:
         - asset: assets/fonts/ITCHighlanderBook.otf
+    - family: Rakesly
+      fonts:
+        - asset: assets/fonts/RakeslyBoldItalic.ttf
+          style: italic
+          weight: 700
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

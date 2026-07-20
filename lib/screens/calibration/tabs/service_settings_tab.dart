@@ -624,43 +624,6 @@ class _ServiceSettingsTabState extends State<ServiceSettingsTab> {
                     label: const Text('Firmware Güncellemesini Kontrol Et', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
                   ),
                 ),
-                const SizedBox(height: 12),
-
-                // ── Exit ─────────────────────────────────
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    onPressed: () => showDialog<void>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: Text('Çıkış Yap', style: TextStyle(fontWeight: FontWeight.w700, color: CalColors.error)),
-                        content: const Text('Rol seçim ekranına dönmek istiyor musunuz?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('İptal'),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: CalColors.error,
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-                            child: const Text('Çıkış Yap'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: CalColors.error,
-                      side: BorderSide(color: CalColors.error),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    icon: const Icon(Icons.logout, size: 20),
-                    label: const Text('Çıkış Yap', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                  ),
-                ),
                 const SizedBox(height: 24),
               ],
             ),

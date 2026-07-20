@@ -52,6 +52,8 @@ class ParameterValidator {
         return _validateOption(param, raw);
       case ParamType.toggleBool:
         return _validateToggle(raw);
+      case ParamType.tyreSize:
+        return _validateTyreSize(param, raw);
     }
   }
 
@@ -150,6 +152,26 @@ class ParameterValidator {
     final trimmed = raw.trim();
     if (param.options == null || !param.options!.contains(trimmed)) {
       throw ParamValidationException('${param.label}: Geçersiz seçenek.');
+    }
+    return trimmed;
+  }
+
+  static final RegExp _tyreSizePattern = RegExp(r'^\d{2,3}/\d{2}R\d{2}(\.5)?$');
+
+  static String _validateTyreSize(CalParam param, String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      throw ParamValidationException('${param.label}: Bu alan boş bırakılamaz.');
+    }
+    if (!_tyreSizePattern.hasMatch(trimmed)) {
+      throw ParamValidationException(
+        '${param.label}: Geçersiz lastik ebadı formatı (örn. 295/80R22.5).',
+      );
+    }
+    if (param.maxLen != null && trimmed.length > param.maxLen!) {
+      throw ParamValidationException(
+        '${param.label}: En fazla ${param.maxLen} karakter girilebilir.',
+      );
     }
     return trimmed;
   }

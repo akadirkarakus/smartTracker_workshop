@@ -1,6 +1,7 @@
 // K-LINE / KWP2000 (ISO 14230) sabitleri — CalibrationMessages.md'e göre
 
-class KLineRecords {
+class KLineRecords 
+{
   KLineRecords._();
 
   // ── Araç kimliği ───────────────────────────────────────────────────────────
@@ -122,7 +123,8 @@ class KLineRecords {
 }
 
 // ── Oturum tipleri (StartDiagnosticSession sub-function) ───────────────────
-class KLineSession {
+class KLineSession 
+{
   KLineSession._();
 
   static const int standard    = 0x81; // StandartDiagnosticSession
@@ -131,7 +133,8 @@ class KLineSession {
 }
 
 // ── Servis IDleri (SID) ────────────────────────────────────────────────────
-class KLineSid {
+class KLineSid 
+{
   KLineSid._();
 
   static const int startComm     = 0x81; // fast-init format
@@ -154,7 +157,8 @@ class KLineSid {
 }
 
 // ── Rutin test IDleri ──────────────────────────────────────────────────────
-class KLineRoutineIds {
+class KLineRoutineIds 
+{
   KLineRoutineIds._();
 
   static const int displayTest          = 0x0150;
@@ -207,7 +211,8 @@ const Set<String> kNoResultTestIds = {'keypad', 'buzzer_test'};
 const Set<String> kDeviceOnlyResultTestIds = {...kAutoResultTestIds, ...kNoResultTestIds};
 
 // ── RoutineControl sub-function seçicileri ─────────────────────────────────
-class KLineRoutineSelect {
+class KLineRoutineSelect 
+{
   KLineRoutineSelect._();
 
   static const int startRoutine          = 0x01;
@@ -216,7 +221,8 @@ class KLineRoutineSelect {
 }
 
 // ── IO Control seçenekleri ─────────────────────────────────────────────────
-class KLineIocpControl {
+class KLineIocpControl 
+{
   KLineIocpControl._();
 
   static const int returnControlToEcu   = 0x01; // Reset to default
@@ -228,7 +234,8 @@ class KLineIocpControl {
 }
 
 // ── Negative Response Codes (NRC) ──────────────────────────────────────────
-class KLineNrc {
+class KLineNrc 
+{
   KLineNrc._();
 
   static const int requestCorrectlyReceivedResponsePending = 0x78;
@@ -241,7 +248,8 @@ class KLineNrc {
 }
 
 // ── Timing sabitleri (ms) ──────────────────────────────────────────────────
-class KLineTiming {
+class KLineTiming 
+{
   KLineTiming._();
 
   static const Duration interMessageDelay = Duration(milliseconds: 60);

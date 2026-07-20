@@ -14,6 +14,7 @@ import '../kline/kline_records.dart';
 import '../kline/kline_service.dart';
 import '../kline/parameter_validation.dart';
 import '../models/calibration_data.dart';
+import 'auth/profile_screen.dart';
 import 'ble_scan_screen.dart';
 import 'calibration/tabs/calibration_params_tab.dart';
 import 'calibration/tabs/dashboard_tab.dart';
@@ -319,6 +320,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     );
   }
 
+  void _openAccount() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+  }
+
   void _clearDtcs() => setState(() => _dtcCodes.clear());
 
   void _openBleScan(BuildContext context) {
@@ -613,34 +621,11 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       backgroundColor: CalColors.surface,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
+      toolbarHeight: 44,
       automaticallyImplyLeading: false,
-      centerTitle: true,
-      title: const Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: 'Smart',
-              style: TextStyle(color: Color(0xFF99D700)),
-            ),
-            TextSpan(
-              text: ' Tracker',
-              style: TextStyle(color: Color(0xFF919191)),
-            ),
-          ],
-        ),
-        style: TextStyle(
-          fontFamily: 'ITCHighlander',
-          fontSize: 24,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.2,
-          shadows: [
-            Shadow(
-              color: Color(0x55000000),
-              offset: Offset(0.5, 0.5),
-              blurRadius: 0,
-            ),
-          ],
-        ),
+      leading: IconButton(
+        icon: Icon(Icons.account_circle_outlined, color: CalColors.onSurfaceVariant),
+        onPressed: _openAccount,
       ),
       actions: [
         if (_tabIndex == 0)
@@ -672,7 +657,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 62,
+          height: 52,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: List.generate(items.length, (i) {
@@ -684,7 +669,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   behavior: HitTestBehavior.opaque,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

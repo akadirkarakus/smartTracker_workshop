@@ -103,7 +103,7 @@ class CalColors {
 // ──────────────────────────────────────────────
 enum CalSection { vehicle, tyre, time, system }
 
-enum ParamType { text, number, date, dateTime, selectOption, toggleBool }
+enum ParamType { text, number, date, dateTime, selectOption, toggleBool, tyreSize }
 
 class CalParam {
   final String id;
@@ -135,7 +135,7 @@ List<CalParam> defaultCalParams() => [
         options: ['TUR', 'ENG', 'DEU', 'FRA', 'POL', 'ESP', 'UKR', 'NLD', 'BEL']),
       CalParam(id: 'reg_date',     label: 'Araç Tescil Tarihi',       section: CalSection.vehicle, type: ParamType.date),
       // ── Lastik & Hareket ───────────────────────
-      CalParam(id: 'tyre_size',    label: 'Lastik Boyutu',            section: CalSection.tyre,    type: ParamType.text,         maxLen: 15),
+      CalParam(id: 'tyre_size',    label: 'Lastik Boyutu',            section: CalSection.tyre,    type: ParamType.tyreSize,     maxLen: 15),
       CalParam(id: 'tyre_circ',    label: 'Lastik Çevresi',           section: CalSection.tyre,    type: ParamType.number,       unit: 'mm'),
       CalParam(id: 'k_constant',   label: 'K-Sabiti',                 section: CalSection.tyre,    type: ParamType.number,       unit: 'imp/km'),
       CalParam(id: 'w_constant',   label: 'W-Sabiti',                 section: CalSection.tyre,    type: ParamType.number,       unit: 'imp/km'),
